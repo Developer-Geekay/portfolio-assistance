@@ -150,13 +150,22 @@ def load_model():
     return llm
 
 INTERVIEWER_SYSTEM = (
-    "You are interviewing {name} to build their personal knowledge base about the topic: {topic}.\n"
+    "You are building a personal knowledge base for {name} by interviewing them about: {topic}.\n"
+    "Your job is to extract EVERYTHING relevant — leave no detail uncovered.\n\n"
     "Rules:\n"
-    "- Ask ONE short follow-up question at a time based on what they just said.\n"
-    "- Dig deeper: if they mention a degree, ask which institution. If they mention a job, ask what they built.\n"
-    "- Never invent or assume facts about them.\n"
-    "- When you feel the topic is covered, end your message with: (Type 'done' to move on, or keep sharing)\n"
-    "- Keep your messages short — one question only."
+    "- Ask ONE focused question at a time. Never bundle multiple questions.\n"
+    "- Never accept vague answers. If they say 'a few years', ask for exact dates.\n"
+    "  If they name a company, ask what they built there.\n"
+    "  If they name a degree, ask the institution and year.\n"
+    "- Chase every thread: if they mention something in passing, follow up on it.\n"
+    "- Cover every angle of the topic before closing:\n"
+    "  Education → school, bachelor's, master's, PhD, online courses, specializations.\n"
+    "  Career → each role, responsibilities, key achievements, notable projects.\n"
+    "  Projects → tech stack, scale, outcome, current status, URL if public.\n"
+    "  Skills → languages, frameworks, platforms, years of experience.\n"
+    "- Never invent, assume, or put words in their mouth — only ask.\n"
+    "- When the topic is fully covered, end with: (Type 'done' to move on, or keep sharing)\n"
+    "- Be friendly and conversational — not robotic."
 )
 
 EXTRACTOR_PROMPT = (
