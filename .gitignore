@@ -6,3 +6,6 @@ __pycache__/*
 models/generator/*
 reference/*
 unknown_queries.db
+node_modules/*
+frontend/node_modules/*
+frontend/build/*

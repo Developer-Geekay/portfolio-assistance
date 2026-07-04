@@ -3,7 +3,7 @@ import useVoiceAssistant from '../hooks/useVoiceAssistant'
 import './Stage.css'
 
 const N = 220   // ring particles
-const API_URL = 'http://localhost:8000'
+const API_BASE = '/api'
 const TAGLINE_MS = 8000
 
 const TAGLINES = [
@@ -19,7 +19,7 @@ export default function Stage() {
   const loaderRef  = useRef(null)
   const loadBarRef = useRef(null)
 
-  const { state, stateRef, transcript, toggle, analyserRef, pulseRef } = useVoiceAssistant()
+  const { state, stateRef, transcript, toggle, analyserRef } = useVoiceAssistant()
 
   // toggle lives in a ref so the canvas click handler always sees the latest
   const toggleRef = useRef(toggle)
@@ -30,7 +30,7 @@ export default function Stage() {
   const poolRef = useRef([...TAGLINES])
 
   useEffect(() => {
-    fetch(`${API_URL}/facts?n=15`)
+    fetch(`${API_BASE}/facts?n=15`)
       .then(r => r.json())
       .then(facts => { poolRef.current = [...TAGLINES, ...facts] })
       .catch(() => {})   // backend down → static taglines only
@@ -95,10 +95,17 @@ export default function Stage() {
     }, 1200)
 
     function resize() {
-      W = canvas.width = window.innerWidth
-      H = canvas.height = window.innerHeight
+      // size from the actual element box (not window.inner*) and scale for
+      // devicePixelRatio — mismatch between the two is what skews mobile
+      const rect = stage.getBoundingClientRect()
+      const dpr  = window.devicePixelRatio || 1
+      W = rect.width
+      H = rect.height
+      canvas.width  = Math.round(W * dpr)
+      canvas.height = Math.round(H * dpr)
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       cx = W / 2; cy = H / 2
-      R = Math.min(W, H) * 0.21
+      R = Math.min(W, H) * 0.16
       dust = Array.from({ length: Math.floor((W * H) / 60000) }, () => ({
         x: Math.random() * W,
         y: Math.random() * H,
@@ -110,8 +117,8 @@ export default function Stage() {
       stars = Array.from({ length: Math.floor((W * H) / 9000) }, () => ({
         x: Math.random() * W,
         y: Math.random() * H,
-        vx: (Math.random() - 0.5) * 0.05,
-        vy: (Math.random() - 0.5) * 0.05,
+        vx: (Math.random() - 0.5) * 0.22,
+        vy: (Math.random() - 0.5) * 0.22,
         r: Math.random() * 1.1 + 0.5,
         a: Math.random() * 0.35 + 0.25,
       }))
@@ -131,6 +138,9 @@ export default function Stage() {
     let listenAmt = 0
     let level = 0
     let ripples = []
+    let spin = 0            // ring rotation — spins up while processing
+    let spinVel = 0.0035
+    let procAmt = 0         // eased 0→1 while processing (sweep arc)
     const freq = new Uint8Array(128)
 
     const onMouseMove = (e) => { mx = e.clientX; my = e.clientY }
@@ -138,8 +148,9 @@ export default function Stage() {
     window.addEventListener('mousemove', onMouseMove)
     window.addEventListener('touchmove', onTouchMove, { passive: true })
 
-    const onClick = () => {
-      const d = Math.hypot(mx - cx, my - cy)
+    const onClick = (e) => {
+      // use the event's own coordinates — mobile taps never fire mousemove
+      const d = Math.hypot(e.clientX - cx, e.clientY - cy)
       if (d < R * 1.6) toggleRef.current()
     }
     canvas.addEventListener('click', onClick)
@@ -211,15 +222,14 @@ export default function Stage() {
       // ease in/out of active mode
       listenAmt += ((active ? 1 : 0) - listenAmt) * 0.05
 
-      // voice amplitude: real mic while listening, simulated while speaking
+      // voice amplitude: real audio both ways — mic while listening,
+      // Piper playback while speaking (analyserRef points at the right one)
       let raw = 0
-      if (vState === 'listening' && analyserRef.current) {
+      if ((vState === 'listening' || vState === 'speaking') && analyserRef.current) {
         analyserRef.current.getByteFrequencyData(freq)
         raw = Math.min(1, (freq.reduce((s, v) => s + v, 0) / freq.length / 255) * 3)
       } else if (vState === 'speaking') {
-        // audiogram: pulseRef spikes on every spoken word (TTS boundary), decays here
-        pulseRef.current *= 0.94
-        raw = 0.12 + pulseRef.current * 0.85 + Math.max(0, Math.sin(t * 3.1)) * 0.06
+        raw = 0.15 + Math.max(0, Math.sin(t * 3.1)) * 0.1   // fallback if analyser missing
       } else if (vState === 'processing') {
         raw = 0.15 + Math.sin(t * 1.4) * 0.08
       }
@@ -246,6 +256,12 @@ export default function Stage() {
       // assembly: after load, particles converge from scatter into the ring
       if (loaded) assembled += (1 - assembled) * 0.03
 
+      // ring spins up noticeably while the answer is being generated
+      const spinTarget = vState === 'processing' ? 0.045 : 0.0035
+      spinVel += (spinTarget - spinVel) * 0.06
+      spin += spinVel
+      procAmt += ((vState === 'processing' ? 1 : 0) - procAmt) * 0.08
+
       const breathe = 1 + Math.sin(t * 0.6) * 0.015
       const listenPulse = 1 + level * 0.06
       const speed = 1 + listenAmt * 3
@@ -260,8 +276,8 @@ export default function Stage() {
         const circleR  = R * breathe
         let rr = organicR + (circleR - organicR) * gather * (1 - listenAmt)
 
-        p.tx = cx + Math.cos(p.a + t * 0.03) * rr
-        p.ty = cy + Math.sin(p.a + t * 0.03) * rr
+        p.tx = cx + Math.cos(p.a + spin) * rr
+        p.ty = cy + Math.sin(p.a + spin) * rr
         const ease = (0.08 + listenAmt * 0.12) * (0.15 + 0.85 * assembled)
         if (loaded) {
           p.x += (p.tx - p.x) * ease
@@ -278,6 +294,21 @@ export default function Stage() {
         ctx.beginPath()
         ctx.arc(p.x, p.y, p.r + gather * 0.4 + listenAmt * (0.3 + level * 0.8), 0, Math.PI * 2)
         ctx.fill()
+      }
+
+      // processing: bright arc sweeping around the ring — "thinking" spinner
+      if (procAmt > 0.02) {
+        const sweep = t * 2.4
+        ctx.strokeStyle = `rgba(223,230,236,${0.4 * procAmt})`
+        ctx.lineWidth = 1.3
+        ctx.beginPath()
+        ctx.arc(cx, cy, R * 1.1, sweep, sweep + 1.0)
+        ctx.stroke()
+        ctx.strokeStyle = `rgba(223,230,236,${0.15 * procAmt})`
+        ctx.lineWidth = 0.7
+        ctx.beginPath()
+        ctx.arc(cx, cy, R * 1.1, sweep - 0.5, sweep)
+        ctx.stroke()
       }
 
       // inner echo ring — a smaller mirrored waveform, only while active
@@ -319,7 +350,7 @@ export default function Stage() {
       window.removeEventListener('touchmove', onTouchMove)
       canvas.removeEventListener('click', onClick)
     }
-  }, [stateRef, analyserRef, pulseRef])
+  }, [stateRef, analyserRef])
 
   return (
     <div className="stage" ref={stageRef}>

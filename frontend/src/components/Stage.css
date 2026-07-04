@@ -2,6 +2,7 @@
   position: relative;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;   /* mobile: track the real viewport, not the URL-bar one */
 }
 
 /* ---- loader ---- */
@@ -72,13 +73,13 @@
   text-indent: 0.10em;
   text-transform: uppercase;
   color: transparent;
-  -webkit-text-stroke: 1px rgba(223, 230, 236, 0.05);
+  -webkit-text-stroke: 1px rgba(223, 230, 236, 0.11);
   opacity: 0;
   transition: opacity 3s ease;
 }
 .legend span:last-child {
   -webkit-text-stroke: 0;
-  color: rgba(223, 230, 236, 0.032);
+  color: rgba(223, 230, 236, 0.07);
 }
 .stage.ready .legend { opacity: 1; }
 
@@ -97,10 +98,11 @@
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  font-size: 11px;
-  font-weight: 300;
-  letter-spacing: 8px;
-  text-indent: 8px;
+  font-family: 'Michroma', sans-serif;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 6px;
+  text-indent: 6px;
   color: var(--dim);
   text-transform: uppercase;
   transition: color 1.2s ease, opacity 2s ease;
@@ -169,10 +171,12 @@
   z-index: 2;
   max-width: 70vw;
   text-align: center;
-  font-size: 0.9rem;
-  font-weight: 300;
-  line-height: 1.5;
-  letter-spacing: 0.05em;
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-style: italic;
+  font-size: 1.15rem;
+  font-weight: 400;
+  line-height: 1.55;
+  letter-spacing: 0.04em;
   color: var(--white);
   opacity: 0.85;
   user-select: none;
@@ -182,4 +186,19 @@
 @media (prefers-reduced-motion: reduce) {
   .legend, .start, .hint { transition: none; opacity: 1; }
   .loader .dots i { animation: none; opacity: 0.6; }
+}
+
+/* ---- mobile ---- */
+@media (max-width: 600px) {
+  .transcript {
+    max-width: 88vw;
+    font-size: 0.82rem;
+    bottom: 36px;
+  }
+  .tagline {
+    max-width: 84vw;
+    font-size: 11px;
+    bottom: 84px;
+  }
+  .hint { bottom: 44px; }
 }

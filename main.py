@@ -1,12 +1,16 @@
 # main.py — FastAPI server
+import io
 import json
 import os
 import random
 import sqlite3
+import tempfile
+import wave
 from datetime import datetime
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 import engine
 from intent import (detect_intent, GREETING_RESPONSE, THANKS_RESPONSE,
@@ -17,10 +21,24 @@ FALLBACK = (
     "but I've noted your question and he'll review it soon."
 )
 
+WHISPER_MODEL = os.environ.get("GOKUL_WHISPER_MODEL", "base.en")
+PIPER_VOICE   = os.environ.get("GOKUL_PIPER_VOICE", "models/tts/en_US-lessac-medium.onnx")
+
+stt_model   = None   # faster-whisper
+tts_voice   = None   # piper
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global stt_model, tts_voice
     engine.load_model()
+    print("Loading Whisper...")
+    from faster_whisper import WhisperModel
+    stt_model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
+    print("Loading Piper voice...")
+    from piper import PiperVoice
+    tts_voice = PiperVoice.load(PIPER_VOICE)
+    print("Voice pipeline ready.")
     yield
     print("Shutting down.")
 
@@ -115,6 +133,39 @@ async def ask(q: Question, request: Request):
         conn.commit()
 
     return {"answer": answer}
+
+
+@app.post("/transcribe")
+def transcribe(audio: UploadFile = File(...)):
+    """Speech-to-text: browser uploads recorded audio (webm/mp4/wav), Whisper
+    transcribes locally. Sync endpoint → FastAPI runs it in a threadpool."""
+    suffix = os.path.splitext(audio.filename or "")[1] or ".webm"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(audio.file.read())
+        path = tmp.name
+    try:
+        segments, _ = stt_model.transcribe(path, language="en", beam_size=1)
+        text = " ".join(s.text.strip() for s in segments).strip()
+    finally:
+        os.unlink(path)
+    return {"text": text}
+
+
+class SpeakRequest(BaseModel):
+    text: str
+
+
+@app.post("/speak")
+def speak(req: SpeakRequest):
+    """Text-to-speech: Piper renders a WAV, played by the browser's <audio>.
+    Works identically on every browser/OS — no client TTS involved."""
+    text = req.text.strip()[:1000]
+    if not text:
+        raise HTTPException(status_code=400, detail="No text")
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as f:
+        tts_voice.synthesize_wav(text, f)
+    return Response(content=buf.getvalue(), media_type="audio/wav")
 
 
 @app.get("/facts")

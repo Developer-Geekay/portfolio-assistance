@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pydantic
+python-multipart
+llama-cpp-python
+faster-whisper
+piper-tts
+sentence-transformers
+numpy
