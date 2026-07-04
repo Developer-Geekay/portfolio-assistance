@@ -1,28 +1,26 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import './VoiceControl.css'
 
-const API_URL       = 'http://localhost:8000'
-const SILENCE_MS    = 1800    // pause after speech → user finished talking
-const NO_SPEECH_MS  = 10000   // never spoke at all → give up, back to idle
+const API_URL      = 'http://localhost:8000'
+const SILENCE_MS   = 1800    // pause after speech → user finished talking
+const NO_SPEECH_MS = 10000   // never spoke at all → give up, back to idle
 
-export default function VoiceControl({ modeRef, analyserRef }) {
+// Voice assistant state machine: idle | listening | processing | speaking
+export default function useVoiceAssistant() {
   const [state, setState]           = useState('idle')
   const [transcript, setTranscript] = useState('')
 
-  const stateRef        = useRef('idle')
-  const micStreamRef    = useRef(null)
-  const recognitionRef  = useRef(null)
-  const historyRef      = useRef([])
-  const finalRef        = useRef('')      // accumulated final speech across restarts
-  const transcriptRef   = useRef('')      // mirror of displayed transcript
-  const silenceTimerRef = useRef(null)
-  const noSpeechTimerRef= useRef(null)
-  const stoppingRef     = useRef(false)   // we ended the session on purpose
+  const stateRef         = useRef('idle')
+  const analyserRef      = useRef(null)
+  const micStreamRef     = useRef(null)
+  const recognitionRef   = useRef(null)
+  const historyRef       = useRef([])
+  const finalRef         = useRef('')
+  const transcriptRef    = useRef('')
+  const silenceTimerRef  = useRef(null)
+  const noSpeechTimerRef = useRef(null)
+  const stoppingRef      = useRef(false)
 
-  useEffect(() => {
-    stateRef.current = state
-    modeRef.current  = state === 'idle' ? 'ambient' : state
-  }, [state, modeRef])
+  useEffect(() => { stateRef.current = state }, [state])
 
   const clearTimers = () => {
     clearTimeout(silenceTimerRef.current)
@@ -40,7 +38,7 @@ export default function VoiceControl({ modeRef, analyserRef }) {
     if (recognitionRef.current) {
       try { recognitionRef.current.stop() } catch {}
     }
-  }, [analyserRef])
+  }, [])
 
   const speak = useCallback((text) => {
     setState('speaking')
@@ -69,7 +67,6 @@ export default function VoiceControl({ modeRef, analyserRef }) {
     }
   }, [speak])
 
-  // User went quiet after speaking → send what we heard
   const finalize = useCallback(() => {
     const text = transcriptRef.current.trim()
     stopMic()
@@ -127,7 +124,6 @@ export default function VoiceControl({ modeRef, analyserRef }) {
         setTranscript(full)
 
         if (full) {
-          // Heard something → cancel give-up timer, restart silence window
           clearTimeout(noSpeechTimerRef.current)
           clearTimeout(silenceTimerRef.current)
           silenceTimerRef.current = setTimeout(finalize, SILENCE_MS)
@@ -135,7 +131,6 @@ export default function VoiceControl({ modeRef, analyserRef }) {
       }
 
       recognition.onerror = (e) => {
-        // 'no-speech'/'aborted' happen naturally — session restart handles them
         if (e.error === 'not-allowed') {
           stopMic()
           setState('idle')
@@ -160,27 +155,23 @@ export default function VoiceControl({ modeRef, analyserRef }) {
     setState('listening')
     createSession()
 
-    // If they never say anything at all, give up after a while
     noSpeechTimerRef.current = setTimeout(() => {
       if (!transcriptRef.current.trim()) finalize()
     }, NO_SPEECH_MS)
-  }, [stopMic, finalize, analyserRef])
+  }, [stopMic, finalize])
 
-  return (
-    <div className="voice-control">
-      {state === 'idle' ? (
-        <>
-          <button className="voice-btn" onClick={startListening}>
-            <span className="voice-btn-ring" />
-            <span className="voice-btn-dot" />
-          </button>
-          <p className="voice-label">Start</p>
-        </>
-      ) : (
-        <p className="voice-transcript">
-          {transcript || (state === 'listening' ? '· · ·' : '')}
-        </p>
-      )}
-    </div>
-  )
+  const cancel = useCallback(() => {
+    stopMic()
+    window.speechSynthesis.cancel()
+    setState('idle')
+    setTranscript('')
+  }, [stopMic])
+
+  // Click on the ring: idle → listen; listening → cancel
+  const toggle = useCallback(() => {
+    if (stateRef.current === 'idle')           startListening()
+    else if (stateRef.current === 'listening') cancel()
+  }, [startListening, cancel])
+
+  return { state, stateRef, transcript, toggle, analyserRef }
 }
