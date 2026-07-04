@@ -10,7 +10,7 @@ export default function Stage() {
   const loaderRef  = useRef(null)
   const loadBarRef = useRef(null)
 
-  const { state, stateRef, transcript, toggle, analyserRef } = useVoiceAssistant()
+  const { state, stateRef, transcript, toggle, analyserRef, pulseRef } = useVoiceAssistant()
 
   // toggle lives in a ref so the canvas click handler always sees the latest
   const toggleRef = useRef(toggle)
@@ -186,12 +186,15 @@ export default function Stage() {
         analyserRef.current.getByteFrequencyData(freq)
         raw = Math.min(1, (freq.reduce((s, v) => s + v, 0) / freq.length / 255) * 3)
       } else if (vState === 'speaking') {
-        const talk = Math.max(0, Math.sin(t * 0.9) * 0.6 + Math.sin(t * 2.3) * 0.4 + Math.sin(t * 5.1) * 0.25)
-        raw = talk * (0.5 + Math.random() * 0.5)
+        // audiogram: pulseRef spikes on every spoken word (TTS boundary), decays here
+        pulseRef.current *= 0.94
+        raw = 0.12 + pulseRef.current * 0.85 + Math.max(0, Math.sin(t * 3.1)) * 0.06
       } else if (vState === 'processing') {
         raw = 0.15 + Math.sin(t * 1.4) * 0.08
       }
-      level += (raw - level) * (active ? 0.12 : 0.06)
+      // fast attack on word pulses while speaking, smooth everywhere else
+      const easeRate = vState === 'speaking' && raw > level ? 0.3 : (active ? 0.12 : 0.06)
+      level += (raw - level) * easeRate
 
       // spawn ripples on amplitude peaks
       if (active && level > 0.55 && Math.random() < 0.08) {
@@ -285,7 +288,7 @@ export default function Stage() {
       window.removeEventListener('touchmove', onTouchMove)
       canvas.removeEventListener('click', onClick)
     }
-  }, [stateRef, analyserRef])
+  }, [stateRef, analyserRef, pulseRef])
 
   return (
     <div className="stage" ref={stageRef}>

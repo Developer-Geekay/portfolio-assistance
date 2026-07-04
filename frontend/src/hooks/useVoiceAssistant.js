@@ -11,6 +11,7 @@ export default function useVoiceAssistant() {
 
   const stateRef         = useRef('idle')
   const analyserRef      = useRef(null)
+  const pulseRef         = useRef(0)      // spikes on each spoken word (TTS boundary events)
   const micStreamRef     = useRef(null)
   const recognitionRef   = useRef(null)
   const historyRef       = useRef([])
@@ -19,6 +20,7 @@ export default function useVoiceAssistant() {
   const silenceTimerRef  = useRef(null)
   const noSpeechTimerRef = useRef(null)
   const stoppingRef      = useRef(false)
+  const beginListeningRef = useRef(null)  // breaks speak → listen circular dependency
 
   useEffect(() => { stateRef.current = state }, [state])
 
@@ -45,8 +47,15 @@ export default function useVoiceAssistant() {
     window.speechSynthesis.cancel()
     const utt   = new SpeechSynthesisUtterance(text)
     utt.rate    = 0.95
-    utt.onend   = () => { setState('idle'); setTranscript('') }
-    utt.onerror = () => { setState('idle'); setTranscript('') }
+    // Each word boundary spikes the ring — audiogram synced to real speech
+    utt.onboundary = () => { pulseRef.current = 1 }
+    // Conversation continues: answer finishes → listen for the next question
+    const resume = () => {
+      setTranscript('')
+      if (beginListeningRef.current) beginListeningRef.current()
+    }
+    utt.onend   = resume
+    utt.onerror = resume
     window.speechSynthesis.speak(utt)
   }, [])
 
@@ -61,9 +70,9 @@ export default function useVoiceAssistant() {
       const data   = await res.json()
       const answer = data.answer || "I don't have that information."
       historyRef.current = [...historyRef.current, { q: question, a: answer }].slice(-3)
-      setTimeout(() => speak(answer), 2000)
+      speak(answer)
     } catch {
-      setTimeout(() => speak("Sorry, I couldn't reach the server."), 2000)
+      speak("Sorry, I couldn't reach the server.")
     }
   }, [speak])
 
@@ -78,8 +87,8 @@ export default function useVoiceAssistant() {
     }
   }, [stopMic, askApi])
 
-  const startListening = useCallback(async () => {
-    if (stateRef.current !== 'idle') return
+  // Core listening setup — no idle guard, so the speak → listen loop can call it
+  const beginListening = useCallback(async () => {
     window.speechSynthesis.cancel()
     setTranscript('')
     finalRef.current      = ''
@@ -152,6 +161,7 @@ export default function useVoiceAssistant() {
       recognition.start()
     }
 
+    stateRef.current = 'listening'   // immediate — session restart logic reads this
     setState('listening')
     createSession()
 
@@ -160,6 +170,14 @@ export default function useVoiceAssistant() {
     }, NO_SPEECH_MS)
   }, [stopMic, finalize])
 
+  // Keep the ref current so speak() can resume the loop
+  useEffect(() => { beginListeningRef.current = beginListening }, [beginListening])
+
+  const startListening = useCallback(() => {
+    if (stateRef.current !== 'idle') return
+    beginListening()
+  }, [beginListening])
+
   const cancel = useCallback(() => {
     stopMic()
     window.speechSynthesis.cancel()
@@ -167,11 +185,11 @@ export default function useVoiceAssistant() {
     setTranscript('')
   }, [stopMic])
 
-  // Click on the ring: idle → listen; listening → cancel
+  // Click on the ring: idle → listen; anything else → end the conversation
   const toggle = useCallback(() => {
-    if (stateRef.current === 'idle')           startListening()
-    else if (stateRef.current === 'listening') cancel()
+    if (stateRef.current === 'idle') startListening()
+    else                             cancel()
   }, [startListening, cancel])
 
-  return { state, stateRef, transcript, toggle, analyserRef }
+  return { state, stateRef, transcript, toggle, analyserRef, pulseRef }
 }
