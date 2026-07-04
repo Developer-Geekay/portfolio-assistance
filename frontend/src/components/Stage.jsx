@@ -1,8 +1,17 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import useVoiceAssistant from '../hooks/useVoiceAssistant'
 import './Stage.css'
 
 const N = 220   // ring particles
+const API_URL = 'http://localhost:8000'
+const TAGLINE_MS = 8000
+
+const TAGLINES = [
+  'Technical Architect · OutSystems Specialist',
+  'Ask me anything about Gokul',
+  'Voice-first · Fully self-hosted · No cloud',
+  'Builder of developer tools',
+]
 
 export default function Stage() {
   const stageRef   = useRef(null)
@@ -15,6 +24,28 @@ export default function Stage() {
   // toggle lives in a ref so the canvas click handler always sees the latest
   const toggleRef = useRef(toggle)
   useEffect(() => { toggleRef.current = toggle }, [toggle])
+
+  // ── idle taglines: static lines + random KB facts, rotated while idle ──
+  const [tagline, setTagline] = useState({ text: '', key: 0 })
+  const poolRef = useRef([...TAGLINES])
+
+  useEffect(() => {
+    fetch(`${API_URL}/facts?n=15`)
+      .then(r => r.json())
+      .then(facts => { poolRef.current = [...TAGLINES, ...facts] })
+      .catch(() => {})   // backend down → static taglines only
+
+    let idx = -1
+    const rotate = () => {
+      if (stateRef.current !== 'idle') return   // pause rotation mid-conversation
+      const pool = poolRef.current
+      idx = (idx + 1 + Math.floor(Math.random() * (pool.length - 1))) % pool.length
+      setTagline(prev => ({ text: pool[idx], key: prev.key + 1 }))
+    }
+    const firstTimer = setTimeout(rotate, 3500)   // wait for loader + ring assembly
+    const iv = setInterval(rotate, TAGLINE_MS)
+    return () => { clearTimeout(firstTimer); clearInterval(iv) }
+  }, [stateRef])
 
   useEffect(() => {
     const stage  = stageRef.current
@@ -296,6 +327,9 @@ export default function Stage() {
       <canvas className="stage-canvas" ref={canvasRef} />
       <div className="start">Start</div>
       <div className="hint">· · ·</div>
+      {state === 'idle' && tagline.text && (
+        <p className="tagline" key={tagline.key}>{tagline.text}</p>
+      )}
       {state !== 'idle' && (
         <p className="transcript">{transcript || (state === 'listening' ? '· · ·' : '')}</p>
       )}

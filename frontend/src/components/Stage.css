@@ -133,6 +133,33 @@
   50%      { opacity: 0.3; }
 }
 
+/* ---- idle tagline: rotating quotes / facts about Gokul ---- */
+.tagline {
+  position: absolute;
+  bottom: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  max-width: 62vw;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 300;
+  line-height: 1.7;
+  letter-spacing: 0.14em;
+  color: var(--dim);
+  user-select: none;
+  pointer-events: none;
+  opacity: 0;
+  animation: taglineCycle 8s ease-in-out forwards;
+}
+.stage.listening .tagline { opacity: 0 !important; }
+
+@keyframes taglineCycle {
+  0%       { opacity: 0; }
+  12%, 82% { opacity: 1; }
+  100%     { opacity: 0; }
+}
+
 /* ---- live transcript (bottom, replaces hint while active) ---- */
 .transcript {
   position: absolute;

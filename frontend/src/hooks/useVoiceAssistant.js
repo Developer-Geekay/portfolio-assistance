@@ -4,6 +4,33 @@ const API_URL      = 'http://localhost:8000'
 const SILENCE_MS   = 1800    // pause after speech → user finished talking
 const NO_SPEECH_MS = 10000   // never spoke at all → give up, back to idle
 
+// Chrome populates voices asynchronously — resolve when they're actually there
+function whenVoicesReady() {
+  return new Promise((resolve) => {
+    const synth = window.speechSynthesis
+    const now = synth.getVoices()
+    if (now.length) return resolve(now)
+    let settled = false
+    const done = () => {
+      if (settled) return
+      settled = true
+      resolve(synth.getVoices())
+    }
+    synth.addEventListener('voiceschanged', done, { once: true })
+    setTimeout(done, 1500)   // give up waiting — speak with default anyway
+  })
+}
+
+// Per-browser-tab session: sessionStorage lives exactly until the tab closes
+function getSessionId() {
+  let sid = sessionStorage.getItem('gokul_session')
+  if (!sid) {
+    sid = crypto.randomUUID()
+    sessionStorage.setItem('gokul_session', sid)
+  }
+  return sid
+}
+
 // Voice assistant state machine: idle | listening | processing | speaking
 export default function useVoiceAssistant() {
   const [state, setState]           = useState('idle')
@@ -12,6 +39,8 @@ export default function useVoiceAssistant() {
   const stateRef         = useRef('idle')
   const analyserRef      = useRef(null)
   const pulseRef         = useRef(0)      // spikes on each spoken word (TTS boundary events)
+  const utteranceRef     = useRef(null)   // holds current utterance — Chrome GCs unreferenced ones
+  const audioCtxRef      = useRef(null)
   const micStreamRef     = useRef(null)
   const recognitionRef   = useRef(null)
   const historyRef       = useRef([])
@@ -36,6 +65,10 @@ export default function useVoiceAssistant() {
       micStreamRef.current.getTracks().forEach(t => t.stop())
       micStreamRef.current = null
     }
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close().catch(() => {})
+      audioCtxRef.current = null
+    }
     analyserRef.current = null
     if (recognitionRef.current) {
       try { recognitionRef.current.stop() } catch {}
@@ -44,19 +77,57 @@ export default function useVoiceAssistant() {
 
   const speak = useCallback((text) => {
     setState('speaking')
-    window.speechSynthesis.cancel()
-    const utt   = new SpeechSynthesisUtterance(text)
-    utt.rate    = 0.95
+    stateRef.current = 'speaking'
+
+    const synth = window.speechSynthesis
+    // cancel() while idle can wedge Chrome's speech engine (silent forever
+    // until browser restart) — only clear the queue if something is in it
+    if (synth.speaking || synth.pending) synth.cancel()
+
+    const utt = new SpeechSynthesisUtterance(text)
+    utt.rate  = 0.95
+    // Chrome GC bug: keep the utterance referenced or speech silently dies
+    utteranceRef.current = utt
     // Each word boundary spikes the ring — audiogram synced to real speech
     utt.onboundary = () => { pulseRef.current = 1 }
+
+    console.log('[TTS] speak() called:', JSON.stringify(text.slice(0, 60)),
+                '| voices:', synth.getVoices().length,
+                '| pending:', synth.pending, '| speaking:', synth.speaking, '| paused:', synth.paused)
+    utt.onstart = () => console.log('[TTS] onstart — audio playing')
+
     // Conversation continues: answer finishes → listen for the next question
+    let resumed = false
     const resume = () => {
+      if (resumed) return
+      resumed = true
+      utteranceRef.current = null
       setTranscript('')
       if (beginListeningRef.current) beginListeningRef.current()
     }
-    utt.onend   = resume
-    utt.onerror = resume
-    window.speechSynthesis.speak(utt)
+    utt.onend   = () => { console.log('[TTS] onend'); resume() }
+    utt.onerror = (e) => {
+      console.warn('[TTS] onerror:', e.error)
+      resume()
+    }
+
+    // Wait for the async voice list, pick an explicit English voice, then speak.
+    // cancel() needs a beat before speak(), and a stuck-paused queue needs resume().
+    whenVoicesReady().then((voices) => {
+      // Prefer Chrome's built-in Google voices — they don't go through the
+      // macOS speech daemon, which can wedge and silence all local voices
+      const en = voices.find(v => v.name === 'Google US English')
+              || voices.find(v => v.lang === 'en-US' && !v.localService)
+              || voices.find(v => v.lang === 'en-US' && v.default)
+              || voices.find(v => v.lang === 'en-US')
+              || voices.find(v => v.lang.startsWith('en'))
+      if (en) utt.voice = en
+      console.log('[TTS] voices:', voices.length, '| using:', en ? en.name : 'default')
+      synth.resume()
+      synth.speak(utt)
+      setTimeout(() => console.log('[TTS] 500ms later — speaking:', synth.speaking,
+                                   '| pending:', synth.pending, '| paused:', synth.paused), 500)
+    })
   }, [])
 
   const askApi = useCallback(async (question) => {
@@ -65,7 +136,7 @@ export default function useVoiceAssistant() {
       const res = await fetch(`${API_URL}/ask`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ text: question, history: historyRef.current }),
+        body:    JSON.stringify({ text: question, history: historyRef.current, session_id: getSessionId() }),
       })
       const data   = await res.json()
       const answer = data.answer || "I don't have that information."
@@ -89,7 +160,8 @@ export default function useVoiceAssistant() {
 
   // Core listening setup — no idle guard, so the speak → listen loop can call it
   const beginListening = useCallback(async () => {
-    window.speechSynthesis.cancel()
+    const synth = window.speechSynthesis
+    if (synth.speaking || synth.pending) synth.cancel()
     setTranscript('')
     finalRef.current      = ''
     transcriptRef.current = ''
@@ -105,6 +177,7 @@ export default function useVoiceAssistant() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       micStreamRef.current = stream
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+      audioCtxRef.current = audioCtx
       const source   = audioCtx.createMediaStreamSource(stream)
       const analyser = audioCtx.createAnalyser()
       analyser.fftSize = 256
@@ -180,7 +253,8 @@ export default function useVoiceAssistant() {
 
   const cancel = useCallback(() => {
     stopMic()
-    window.speechSynthesis.cancel()
+    const synth = window.speechSynthesis
+    if (synth.speaking || synth.pending) synth.cancel()
     setState('idle')
     setTranscript('')
   }, [stopMic])
