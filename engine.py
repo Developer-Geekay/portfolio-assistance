@@ -2,6 +2,7 @@
 import json
 from llama_cpp import Llama
 
+# MODEL_PATH = "./models/generator/llama-3.2-1b-instruct-q4.gguf"
 MODEL_PATH = "./models/generator/gemma-4-e2b-it-qat-q4.gguf"
 KB_PATH    = "knowledge_base.json"
 
@@ -25,9 +26,11 @@ def _build_system_prompt() -> str:
 
     return (
         "You are a concise AI assistant representing Gokul Kannan. "
-        "Use ONLY the facts below to answer questions. "
-        "Never invent details not present in the facts. "
-        "If the answer is not covered by the facts, say you don't have that information. "
+        "Answer ONLY using the facts listed below — nothing else. "
+        "NEVER infer, guess, or connect dots between facts. "
+        "NEVER use dates or context to imply unstated facts. "
+        "EDUCATION RULE: Only mention degrees explicitly listed in the facts. Do not add any degree not written there. "
+        "If the answer is not explicitly stated in the facts, say: 'I don't have that information.' "
         "STRICT RULE: Reply in exactly 1-2 sentences. No lists, no headers.\n\n"
         f"FACTS ABOUT GOKUL:\n{facts_block}"
     )
