@@ -52,21 +52,16 @@ conn.execute("""CREATE TABLE IF NOT EXISTS conversations (
 conn.commit()
 
 
-# Admin endpoints (analytics, retrain) must not be public: they expose visitor
-# IPs and questions. Allowed when the request comes straight from localhost
-# (not proxied), or carries the admin key set via GOKUL_ADMIN_KEY.
+# Admin endpoints (analytics, retrain) expose visitor IPs and questions.
+# They require the key from GOKUL_ADMIN_KEY unconditionally and are disabled
+# when it is unset — IP/header-based trust is spoofable and never used.
 ADMIN_KEY = os.environ.get("GOKUL_ADMIN_KEY", "")
 
 
 def require_admin(request: Request):
-    if ADMIN_KEY and request.headers.get("x-admin-key", "") == ADMIN_KEY:
-        return
-    direct_local = (
-        request.client is not None
-        and request.client.host in ("127.0.0.1", "::1")
-        and "x-forwarded-for" not in request.headers   # proxied = not local
-    )
-    if not direct_local:
+    if not ADMIN_KEY:
+        raise HTTPException(status_code=503, detail="Admin endpoints disabled: set GOKUL_ADMIN_KEY")
+    if request.headers.get("x-admin-key", "") != ADMIN_KEY:
         raise HTTPException(status_code=403, detail="Forbidden")
 
 
