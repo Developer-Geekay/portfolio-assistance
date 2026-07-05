@@ -1,6 +1,8 @@
 import { useRef, useState, useCallback } from 'react'
 
-const API_BASE       = '/api'   // vite dev proxy / nginx on the Pi → FastAPI
+// vite dev proxy / nginx → FastAPI; override with VITE_API_BASE when mounted
+// inside another site whose /api is taken (e.g. /assistance-api in a portfolio)
+const API_BASE       = import.meta.env.VITE_API_BASE || '/api'
 const SILENCE_MS     = 1800     // pause after speech → user finished talking
 const NO_SPEECH_MS   = 10000    // never spoke at all → give up, back to idle
 const POST_ANSWER_MS = 8000     // quiet after an answer → say goodbye, go idle

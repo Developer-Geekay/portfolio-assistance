@@ -3,14 +3,20 @@ import useVoiceAssistant from '../hooks/useVoiceAssistant'
 import './Stage.css'
 
 const N = 220   // ring particles
-const API_BASE = '/api'
 const TAGLINE_MS = 8000
 
+// Idle rotation: assistant hints + general quotes (nothing personal)
 const TAGLINES = [
-  'Technical Architect · OutSystems Specialist',
   'Ask me anything about Gokul',
   'Voice-first · Fully self-hosted · No cloud',
-  'Builder of developer tools',
+  '"Simplicity is the ultimate sophistication" — Leonardo da Vinci',
+  '"The best way to predict the future is to invent it" — Alan Kay',
+  '"Make it work, make it right, make it fast" — Kent Beck',
+  '"Technology is best when it brings people together" — Matt Mullenweg',
+  '"First, solve the problem. Then, write the code" — John Johnson',
+  '"Any sufficiently advanced technology is indistinguishable from magic" — Arthur C. Clarke',
+  '"The details are not the details. They make the design" — Charles Eames',
+  '"Stay hungry, stay foolish" — Stewart Brand',
 ]
 
 export default function Stage() {
@@ -25,22 +31,15 @@ export default function Stage() {
   const toggleRef = useRef(toggle)
   useEffect(() => { toggleRef.current = toggle }, [toggle])
 
-  // ── idle taglines: static lines + random KB facts, rotated while idle ──
+  // ── idle taglines: hints + general quotes, rotated while idle ──
   const [tagline, setTagline] = useState({ text: '', key: 0 })
-  const poolRef = useRef([...TAGLINES])
 
   useEffect(() => {
-    fetch(`${API_BASE}/facts?n=15`)
-      .then(r => r.json())
-      .then(facts => { poolRef.current = [...TAGLINES, ...facts] })
-      .catch(() => {})   // backend down → static taglines only
-
     let idx = -1
     const rotate = () => {
       if (stateRef.current !== 'idle') return   // pause rotation mid-conversation
-      const pool = poolRef.current
-      idx = (idx + 1 + Math.floor(Math.random() * (pool.length - 1))) % pool.length
-      setTagline(prev => ({ text: pool[idx], key: prev.key + 1 }))
+      idx = (idx + 1 + Math.floor(Math.random() * (TAGLINES.length - 1))) % TAGLINES.length
+      setTagline(prev => ({ text: TAGLINES[idx], key: prev.key + 1 }))
     }
     const firstTimer = setTimeout(rotate, 3500)   // wait for loader + ring assembly
     const iv = setInterval(rotate, TAGLINE_MS)

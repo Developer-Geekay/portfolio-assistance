@@ -6,6 +6,9 @@ import basicSsl from '@vitejs/plugin-basic-ssl'
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   return {
+    // Serve from a subpath when mounted inside another site,
+    // e.g. VITE_BASE=/assistance/ for the portfolio integration
+    base: env.VITE_BASE || '/',
     plugins: [react(), basicSsl()],
     server: {
       host: env.VITE_HOST || '0.0.0.0',
