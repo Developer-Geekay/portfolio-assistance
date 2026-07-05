@@ -1,11 +1,28 @@
-.venv/*
-__pycache__/*
+.venv/
+__pycache__/
+**/__pycache__/
 .DS_Store
+**/.DS_Store
 *.pyc
-*/.DS_Store
-models/generator/*
-reference/*
+
+# env files hold secrets — only .env.example is tracked
+.env
+**/.env
+
+# runtime data
+backend/unknown_queries.db
 unknown_queries.db
-node_modules/*
-frontend/node_modules/*
-frontend/build/*
+
+# large model binaries (downloaded per DEPLOYMENT.md)
+backend/models/generator/*
+models/generator/*
+backend/test_results/*
+
+
+# local references / scratch
+reference/*
+
+# frontend
+node_modules/
+frontend/dist/
+frontend/build/

@@ -8,6 +8,10 @@ import tempfile
 import wave
 from datetime import datetime
 from contextlib import asynccontextmanager
+
+from dotenv import load_dotenv
+load_dotenv()   # backend/.env — loaded before engine reads its env vars
+
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -281,3 +285,12 @@ async def retrain(request: Request):
         return {"status": "ok"}
     except Exception as e:
         return {"status": "error", "detail": str(e)}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host=os.environ.get("GOKUL_HOST", "0.0.0.0"),
+        port=int(os.environ.get("GOKUL_PORT", "16000")),
+    )

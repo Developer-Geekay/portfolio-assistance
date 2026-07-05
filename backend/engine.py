@@ -1,11 +1,12 @@
 # engine.py — full-context inference engine (shared by chat and API)
 import json
+import os
 import re
 from llama_cpp import Llama
 
-# MODEL_PATH = "./models/generator/llama-3.2-1b-instruct-q4.gguf"
-MODEL_PATH = "./models/generator/gemma-4-e2b-it-qat-q4.gguf"
-KB_PATH    = "knowledge_base.json"
+MODEL_PATH = os.environ.get("GOKUL_LLM_MODEL", "models/generator/gemma-4-e2b-it-qat-q4.gguf")
+KB_PATH    = os.environ.get("GOKUL_KB_PATH", "knowledge_base.json")
+N_THREADS  = int(os.environ.get("GOKUL_LLM_THREADS", "4"))
 
 llm: Llama | None = None
 _system_prompt: str = ""
@@ -52,7 +53,7 @@ def load_model():
     llm = Llama(
         model_path=MODEL_PATH,
         n_ctx=4096,
-        n_threads=4,
+        n_threads=N_THREADS,
         n_gpu_layers=0,
         verbose=False,
         chat_format="gemma",
