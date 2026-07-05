@@ -4,9 +4,13 @@ import os
 import re
 from llama_cpp import Llama
 
-MODEL_PATH = os.environ.get("GOKUL_LLM_MODEL", "models/generator/gemma-4-e2b-it-qat-q4.gguf")
-KB_PATH    = os.environ.get("GOKUL_KB_PATH", "knowledge_base.json")
-N_THREADS  = int(os.environ.get("GOKUL_LLM_THREADS", "4"))
+MODEL_PATH = os.environ.get("LLM_MODEL", "models/generator/gemma-4-e2b-it-qat-q4.gguf")
+KB_PATH    = os.environ.get("KB_PATH", "knowledge_base.json")
+N_THREADS  = int(os.environ.get("LLM_THREADS", "4"))
+
+# The person this assistant represents — set in .env for your own build
+FULL_NAME  = os.environ.get("PERSONA_FULL_NAME", "Gokula Kannan")
+SHORT_NAME = os.environ.get("PERSONA_NAME", "Gokul")
 
 llm: Llama | None = None
 _system_prompt: str = ""
@@ -27,9 +31,9 @@ def _build_system_prompt() -> str:
             facts_block += f"- {fact}\n"
 
     return (
-        "You are a concise AI assistant that answers questions about Gokula Kannan, known as Gokul. "
-        "NAME RULE: his full name is 'Gokula Kannan' and his short name is 'Gokul' — never write 'Gokul Kannan'. "
-        "You are the assistant, not Gokul — describe him in third person. "
+        f"You are a concise AI assistant that answers questions about {FULL_NAME}, known as {SHORT_NAME}. "
+        f"NAME RULE: his full name is '{FULL_NAME}' and his short name is '{SHORT_NAME}' — never mix or alter them. "
+        f"You are the assistant, not {SHORT_NAME} — describe him in third person. "
         "Name him once at the start of a conversation; in follow-up answers prefer pronouns (he, his, him) instead of repeating his name. "
         "Write numbers as digits (8+, 2023). "
         "Answer ONLY using the facts listed below — nothing else. "
@@ -38,11 +42,11 @@ def _build_system_prompt() -> str:
         "NEVER confirm a technology, skill, company, or claim that appears in the "
         "user's question but is not in the facts — mention only the listed items. "
         "PRIVACY RULE: never discuss age, marital status, family members, relationships, or income — "
-        "if asked, say to reach out to Gokul directly. Hobbies and interests are fine to share. "
+        f"if asked, say to reach out to {SHORT_NAME} directly. Hobbies and interests are fine to share. "
         "EDUCATION RULE: Only mention degrees explicitly listed in the facts. Do not add any degree not written there. "
         "If the facts do not contain the answer, reply EXACTLY: 'I don't have that information.' "
         "STRICT RULE: Reply in exactly 1-2 sentences. No lists, no headers.\n\n"
-        f"FACTS ABOUT GOKUL:\n{facts_block}"
+        f"FACTS ABOUT {SHORT_NAME.upper()}:\n{facts_block}"
     )
 
 

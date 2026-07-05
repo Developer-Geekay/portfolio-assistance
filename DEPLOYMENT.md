@@ -54,6 +54,18 @@ mkdir -p models/generator
 # Whisper downloads itself on first start (base.en, ~150MB, cached in ~/.cache)
 ```
 
+## 3b. Copy your knowledge base
+
+`knowledge_base.json` is **gitignored** (personal data never lives in the
+repo), so a fresh clone doesn't have it — copy yours from your workstation:
+
+```bash
+scp backend/knowledge_base.json pi:/opt/gokul-ai/backend/
+```
+
+Or build one on the Pi from the sample: see "Building your own assistant"
+in [README.md](README.md).
+
 ## 4. Configure the backend
 
 ```bash
@@ -64,11 +76,15 @@ nano .env
 Production values:
 
 ```ini
-GOKUL_HOST=127.0.0.1        # localhost only — nginx is the public entry
-GOKUL_PORT=16000
-GOKUL_ADMIN_KEY=<long random string>   # python3 -c "import secrets; print(secrets.token_hex(24))"
-GOKUL_LLM_THREADS=4         # Pi 5 has 4 cores
-GOKUL_WHISPER_MODEL=base.en # use tiny.en if RAM is tight
+HOST=127.0.0.1        # localhost only — nginx is the public entry
+PORT=16000
+ADMIN_KEY=<long random string>   # python3 -c "import secrets; print(secrets.token_hex(24))"
+PERSONA_NAME=<short name>
+PERSONA_FULL_NAME=<full name>
+PERSONA_CONTACT=at you@example.com or on LinkedIn
+WHISPER_PROMPT=<your name, companies, tech terms — helps speech recognition>
+LLM_THREADS=4         # Pi 5 has 4 cores
+WHISPER_MODEL=base.en # use tiny.en if RAM is tight
 ```
 
 Smoke test: `python main.py`, then from another shell
@@ -186,4 +202,4 @@ KB-only edits don't need a restart:
 | Piper medium voice | ~100MB |
 | FastAPI + Python | ~150MB |
 
-Swap `GOKUL_WHISPER_MODEL=tiny.en` if you need headroom.
+Swap `WHISPER_MODEL=tiny.en` if you need headroom.

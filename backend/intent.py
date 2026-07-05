@@ -1,4 +1,9 @@
+import os
 import re
+
+# The person this assistant represents — set in .env for your own build
+NAME    = os.environ.get("PERSONA_NAME", "Gokul")
+CONTACT = os.environ.get("PERSONA_CONTACT", "via the contact links on this site")
 
 GREETINGS  = {"hi", "hello", "hey", "hii", "helo", "howdy", "sup", "yo"}
 THANKS     = {"thanks", "thank you", "thankyou", "thx", "ty", "great", "cool", "awesome", "ok", "okay"}
@@ -32,18 +37,18 @@ PERSONAL_PATTERN = re.compile(
 )
 
 GREETING_RESPONSE = (
-    "Hey there! I'm Gokul's AI assistant. "
-    "Ask me anything about Gokul — his skills, projects, experience, or background!"
+    f"Hey there! I'm {NAME}'s AI assistant. "
+    f"Ask me anything about {NAME} — his skills, projects, experience, or background!"
 )
-THANKS_RESPONSE     = "Glad I could help! Feel free to ask anything else about Gokul."
+THANKS_RESPONSE     = f"Glad I could help! Feel free to ask anything else about {NAME}."
 FAREWELL_RESPONSE   = "Thanks for stopping by! Have a great day."
 PERSONAL_RESPONSE   = (
-    "For that, it's best to reach out to Gokul directly at developergeekay@gmail.com "
-    "or on LinkedIn — or share your name and email or phone number here, "
+    f"For that, it's best to reach out to {NAME} directly {CONTACT} — "
+    "or share your name and email or phone number here, "
     "and he'll get back to you."
 )
 LEAD_RESPONSE       = (
-    "Perfect — I've noted your details, and Gokul will reach out to you soon. "
+    f"Perfect — I've noted your details, and {NAME} will reach out to you soon. "
     "Anything else you'd like to know about his work?"
 )
 
@@ -76,8 +81,8 @@ def extract_contact(text: str):
         }
     return None
 SELF_INTRO_RESPONSE = (
-    "I'm Gokul's personal AI assistant — a lightweight RAG system built to answer "
-    "questions about Gokul: his skills, experience, projects, and background. "
+    f"I'm {NAME}'s personal AI assistant — a fully self-hosted system built to answer "
+    f"questions about {NAME}: his skills, experience, projects, and background. "
     "Ask me anything about him!"
 )
 

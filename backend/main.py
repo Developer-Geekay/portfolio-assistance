@@ -21,20 +21,14 @@ from intent import (detect_intent, extract_contact, GREETING_RESPONSE,
                     THANKS_RESPONSE, FAREWELL_RESPONSE, SELF_INTRO_RESPONSE,
                     PERSONAL_RESPONSE, LEAD_RESPONSE)
 
-FALLBACK = (
-    "That's something Gokul hasn't shared with me yet — "
-    "but I've noted your question and he'll review it soon."
-)
+WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base.en")
+PIPER_VOICE   = os.environ.get("PIPER_VOICE", "models/tts/en_US-lessac-medium.onnx")
 
-WHISPER_MODEL = os.environ.get("GOKUL_WHISPER_MODEL", "base.en")
-PIPER_VOICE   = os.environ.get("GOKUL_PIPER_VOICE", "models/tts/en_US-lessac-medium.onnx")
-
-# Domain vocabulary seeds Whisper so proper nouns transcribe correctly
-# (visitors say "Riyad Capital", not "real capital")
-WHISPER_PROMPT = (
-    "Gokul, Gokula Kannan, OutSystems, ODC, O11, Riyad Capital, Riyadh, "
-    "Cordova, Capacitor, Neutrinos, Mphasis, Netlink, Onward Technologies, "
-    "Raspberry Pi, DevTools, Chrome extension, certifications, architect"
+# Domain vocabulary seeds Whisper so proper nouns transcribe correctly —
+# list your name, companies, and tech terms in .env (comma-separated)
+WHISPER_PROMPT = os.environ.get(
+    "WHISPER_PROMPT",
+    "skills, projects, experience, certifications, architect, developer"
 )
 
 stt_model   = None   # faster-whisper
@@ -93,14 +87,14 @@ conn.commit()
 
 
 # Admin endpoints (analytics, retrain) expose visitor IPs and questions.
-# They require the key from GOKUL_ADMIN_KEY unconditionally and are disabled
+# They require the key from ADMIN_KEY unconditionally and are disabled
 # when it is unset — IP/header-based trust is spoofable and never used.
-ADMIN_KEY = os.environ.get("GOKUL_ADMIN_KEY", "")
+ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
 
 
 def require_admin(request: Request):
     if not ADMIN_KEY:
-        raise HTTPException(status_code=503, detail="Admin endpoints disabled: set GOKUL_ADMIN_KEY")
+        raise HTTPException(status_code=503, detail="Admin endpoints disabled: set ADMIN_KEY")
     if request.headers.get("x-admin-key", "") != ADMIN_KEY:
         raise HTTPException(status_code=403, detail="Forbidden")
 
@@ -291,6 +285,6 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "main:app",
-        host=os.environ.get("GOKUL_HOST", "0.0.0.0"),
-        port=int(os.environ.get("GOKUL_PORT", "16000")),
+        host=os.environ.get("HOST", "0.0.0.0"),
+        port=int(os.environ.get("PORT", "16000")),
     )

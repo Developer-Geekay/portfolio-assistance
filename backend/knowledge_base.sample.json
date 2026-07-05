@@ -1,0 +1,62 @@
+[
+  {
+    "id": "kb_001",
+    "topic": "identity",
+    "fact": "Alex's full name is Alex Morgan. Digitally, they are known as alexdev."
+  },
+  {
+    "id": "kb_002",
+    "topic": "identity",
+    "fact": "Alex is a Senior Software Engineer with 6+ years of experience in web development."
+  },
+  {
+    "id": "kb_003",
+    "topic": "identity",
+    "fact": "To contact Alex, reach them at alex@example.com or on LinkedIn at linkedin.com/in/alexdev. Their GitHub is github.com/alexdev."
+  },
+  {
+    "id": "kb_004",
+    "topic": "career",
+    "fact": "Alex currently works at Example Corp as a Senior Software Engineer, leading the payments platform team."
+  },
+  {
+    "id": "kb_005",
+    "topic": "career",
+    "fact": "Alex's career timeline: StartupXYZ (2018-2020) as Junior Developer, WebAgency (2020-2022) as Full-stack Developer, Example Corp (2022-present) as Senior Software Engineer."
+  },
+  {
+    "id": "kb_006",
+    "topic": "tech_stack",
+    "fact": "Alex's primary tech stack includes TypeScript, React, Node.js, PostgreSQL, and Docker."
+  },
+  {
+    "id": "kb_007",
+    "topic": "expertise",
+    "fact": "Alex specializes in payment systems, API design, and frontend performance optimization."
+  },
+  {
+    "id": "kb_008",
+    "topic": "projects",
+    "fact": "Alex created OpenBudget, an open-source personal finance tracker with over 2,000 GitHub stars."
+  },
+  {
+    "id": "kb_009",
+    "topic": "certifications",
+    "fact": "Alex holds the AWS Solutions Architect Associate certification and a Certified Kubernetes Application Developer (CKAD) certification."
+  },
+  {
+    "id": "kb_010",
+    "topic": "education",
+    "fact": "Alex holds a Bachelor of Science in Computer Science from State University, completed in 2018."
+  },
+  {
+    "id": "kb_011",
+    "topic": "personal",
+    "fact": "Outside of work, Alex enjoys rock climbing, photography, and contributing to open-source projects."
+  },
+  {
+    "id": "kb_012",
+    "topic": "summary",
+    "fact": "Alex Morgan is a Senior Software Engineer with 6+ years of experience, specializing in payment systems and API design. They lead the payments platform team at Example Corp, maintain the popular OpenBudget open-source project, and hold AWS and Kubernetes certifications. Outside work they enjoy rock climbing and photography."
+  }
+]

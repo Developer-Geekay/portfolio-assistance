@@ -52,7 +52,7 @@ Prerequisites: Python 3.10+, Node 20+, and the model files (see
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env        # set GOKUL_ADMIN_KEY etc.
+cp .env.example .env        # set ADMIN_KEY etc.
 python main.py
 ```
 
@@ -83,7 +83,7 @@ click the ring, and talk. For phone testing use `https://<your-lan-ip>:5173`
 | `/unknown-queries` | GET | `X-Admin-Key` | Questions the KB couldn't answer |
 | `/retrain` | POST | `X-Admin-Key` | Reload the KB without restart |
 
-Admin endpoints stay disabled (503) until `GOKUL_ADMIN_KEY` is set in
+Admin endpoints stay disabled (503) until `ADMIN_KEY` is set in
 `backend/.env`.
 
 ## Testing
@@ -95,8 +95,50 @@ python test_runner.py    # 54 automated queries across 10 categories
 
 ## Building your own assistant
 
-1. `python kb_builder.py` — the local model interviews you topic by topic and
-   extracts facts (or `--no-model` to type facts directly)
-2. Review, edit, and save — facts land in `knowledge_base.json`
-3. `python test_runner.py` and adjust facts until answers feel right
-4. Deploy (see [DEPLOYMENT.md](DEPLOYMENT.md))
+Your personal knowledge base is **never committed** — `knowledge_base.json`
+is gitignored, so your facts stay on your machine. The repo ships a fictional
+sample showing the expected structure.
+
+**1. Create your knowledge base** — pick one:
+
+```bash
+cd backend
+
+# Option A: start from the sample and edit by hand
+cp knowledge_base.sample.json knowledge_base.json
+
+# Option B: let the local model interview you topic by topic
+python kb_builder.py          # or --no-model to type facts directly
+```
+
+The format is a flat list of facts grouped by topic:
+
+```json
+{ "id": "kb_001", "topic": "identity", "fact": "Alex is a Senior Software Engineer with 6+ years of experience." }
+```
+
+Guidelines that make small models answer well:
+- One self-contained statement per fact, written in third person
+- Repeat the person's name in each fact (facts are injected independently)
+- Cover the questions visitors actually ask: who/role, career timeline,
+  skills, projects, education, certifications, contact, hobbies
+- Add one long `summary` fact — it powers "tell me about them"
+- Don't include anything you wouldn't say to a stranger; the privacy gate
+  deflects personal questions, but the KB is the source of truth
+
+**2. Personalize the assistant** — in `backend/.env`:
+
+```ini
+PERSONA_NAME=Alex
+PERSONA_FULL_NAME=Alex Morgan
+PERSONA_CONTACT=at alex@example.com or on LinkedIn
+WHISPER_PROMPT=Alex Morgan, Example Corp, OpenBudget   # proper nouns for STT accuracy
+```
+
+Also update the name legend in `frontend/src/components/Stage.jsx` and the
+taglines in the same file.
+
+**3. Test** — `python test_runner.py`, adjust facts until answers feel right
+(the test file doubles as a template for your own assertions).
+
+**4. Deploy** — see [DEPLOYMENT.md](DEPLOYMENT.md).
