@@ -1,16 +1,80 @@
+import re
+
 GREETINGS  = {"hi", "hello", "hey", "hii", "helo", "howdy", "sup", "yo"}
 THANKS     = {"thanks", "thank you", "thankyou", "thx", "ty", "great", "cool", "awesome", "ok", "okay"}
 FAREWELLS  = {"bye", "goodbye", "see you", "cya", "exit", "quit", "q"}
+# spoken farewells arrive as full sentences — matched by substring
+FAREWELL_PHRASES = (
+    "end the conversation", "end of the conversation", "close the conversation",
+    "close it", "that's all", "thats all", "that is all", "nothing else",
+    "we're done", "were done", "i'm done", "im done", "stop the conversation",
+    "good night", "goodnight", "talk to you later", "catch you later",
+    "talk later", "talk it later", "talk to you soon", "we can talk later",
+    "wrap up", "wrap it up", "call it a day", "see you later", "see you soon",
+)
 SELF_INTRO = {"who are you", "what are you", "who are you?", "what are you?",
               "tell me about yourself", "introduce yourself", "what can you do",
               "what can you tell me", "what do you do"}
+
+# Private-life and career-negotiation topics are never answered by the portal —
+# visitors are pointed to Gokul directly. Hobbies/entertainment stay answerable.
+PERSONAL_PATTERN = re.compile(
+    # private life
+    r"\b(married|marriage|wife|spouse|girlfriend|dating|relationship|"
+    r"kids|children|family|parents|father|mother|brother|sister|relatives|"
+    r"age|how old|religion|caste|phone number|home address|personal life|"
+    # career negotiations & availability
+    r"salary|income|earn(s|ing)?|ctc|compensation|pay package|"
+    r"notice period|driving licen[cs]e|negotiat\w*|relocat\w*|"
+    r"new opportunit\w*|open to opportunit\w*|job opportunit\w*|"
+    r"job offer|offer letter|hiring|join (us|our|my)|joining date|"
+    r"onsite|on-site|remote work|work arrangement|availab\w*)\b"
+)
 
 GREETING_RESPONSE = (
     "Hey there! I'm Gokul's AI assistant. "
     "Ask me anything about Gokul — his skills, projects, experience, or background!"
 )
 THANKS_RESPONSE     = "Glad I could help! Feel free to ask anything else about Gokul."
-FAREWELL_RESPONSE   = "Bye! Have a great day!"
+FAREWELL_RESPONSE   = "Thanks for stopping by! Have a great day."
+PERSONAL_RESPONSE   = (
+    "For that, it's best to reach out to Gokul directly at developergeekay@gmail.com "
+    "or on LinkedIn — or share your name and email or phone number here, "
+    "and he'll get back to you."
+)
+LEAD_RESPONSE       = (
+    "Perfect — I've noted your details, and Gokul will reach out to you soon. "
+    "Anything else you'd like to know about his work?"
+)
+
+# Visitor left their contact details (spoken emails arrive as "john at gmail dot com")
+EMAIL_RE     = re.compile(r"[\w.+-]+@[\w-]+\.[a-z]{2,}", re.I)
+SPOKEN_EMAIL = re.compile(
+    r"([\w.+-]+)\s+at\s+([\w-]+(?:\.[\w-]+)*\.(?:com|net|org|io|in|co|ai|dev|me|edu|gov))\b",
+    re.I)
+PHONE_RE     = re.compile(r"\+?\d[\d\s\-]{6,}\d")
+CONTACT_HINT = re.compile(
+    r"\b(my (name|email|mail|number|phone|contact)|reach me|contact me|"
+    r"call me|email me|mail me|i am|i'm|this is)\b", re.I)
+
+
+def extract_contact(text: str):
+    """Returns {email, phone, raw} when the message carries contact details."""
+    norm = re.sub(r"\s+dot\s+", ".", text, flags=re.I)   # "gmail dot com" → gmail.com
+    m = EMAIL_RE.search(norm)
+    email = m.group() if m else None
+    if not email:
+        m = SPOKEN_EMAIL.search(norm)                    # "john at gmail.com"
+        email = f"{m.group(1)}@{m.group(2)}" if m else None
+    phone = PHONE_RE.search(text)
+    # a bare digit-run (e.g. years) is not a lead — phones need contact wording
+    if email or (phone and CONTACT_HINT.search(text)):
+        return {
+            "email": email,
+            "phone": phone.group() if phone else None,
+            "raw":   text,
+        }
+    return None
 SELF_INTRO_RESPONSE = (
     "I'm Gokul's personal AI assistant — a lightweight RAG system built to answer "
     "questions about Gokul: his skills, experience, projects, and background. "
@@ -21,14 +85,20 @@ SELF_INTRO_RESPONSE = (
 def detect_intent(text: str) -> str:
     """Returns: greeting | thanks | farewell | self_intro | question"""
     normalized = text.lower().strip().rstrip("!?.,")
-    words = set(normalized.split())
+    # strip per-word punctuation so "okay." or "bye," still match
+    words = {w.strip(".,!?'\"") for w in normalized.split()}
+    short = len(words) <= 4   # word-level matches only for short utterances,
+                              # so "thanks, what are his hobbies?" stays a question
 
-    if normalized in GREETINGS or words & GREETINGS:
-        return "greeting"
-    if normalized in THANKS or words & THANKS:
-        return "thanks"
-    if normalized in FAREWELLS or words & FAREWELLS:
+    # farewell first — its phrases are the most specific signal
+    if words & FAREWELLS or any(p in normalized for p in FAREWELL_PHRASES):
         return "farewell"
     if normalized in SELF_INTRO:
         return "self_intro"
+    if PERSONAL_PATTERN.search(normalized):
+        return "personal"
+    if short and (normalized in GREETINGS or words & GREETINGS):
+        return "greeting"
+    if short and (normalized in THANKS or words & THANKS or "thank you" in normalized):
+        return "thanks"
     return "question"

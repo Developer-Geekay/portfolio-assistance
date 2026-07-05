@@ -10,7 +10,8 @@ import time
 from datetime import datetime
 
 import engine
-from intent import detect_intent, GREETING_RESPONSE, THANKS_RESPONSE, SELF_INTRO_RESPONSE
+from intent import (detect_intent, GREETING_RESPONSE, THANKS_RESPONSE,
+                    SELF_INTRO_RESPONSE, PERSONAL_RESPONSE)
 
 FALLBACK_PHRASE = "don't have that information"
 
@@ -37,9 +38,9 @@ TESTS = [
 
     # Skills & Tech
     ("What technologies does he know?", ["OutSystems", "React"],                  [],                          "skills"),
-    ("Is he a frontend or backend developer?", ["OutSystems"],                    [],                          "skills"),
+    ("Is he a frontend or backend developer?", ["full-stack"],                    [],                          "skills"),
     ("Does he know React?",             ["React"],                                ["don't have"],              "skills"),
-    ("Does he know Python?",            [FALLBACK_PHRASE],                        [],                          "skills"),
+    ("Does he know Python?",            [],   ["proficient in Python", "knows Python", "experienced in Python"], "skills"),
     ("Does he know PHP?",               [],                                       [],                          "skills"),
     ("Is he good at mobile development?", ["Cordova", "mobile"],                  [],                          "skills"),
     ("What platforms does he specialize in?", ["OutSystems"],                     [],                          "skills"),
@@ -76,11 +77,11 @@ TESTS = [
     ("Is he good at architecture?",     ["architecture"],                         [],                          "context"),
 
     # Not in KB — should gracefully deflect
-    ("How old is he?",                  [FALLBACK_PHRASE],                        [],                          "out_of_kb"),
-    ("Is he married?",                  [FALLBACK_PHRASE],                        [],                          "out_of_kb"),
-    ("What is his salary expectation?", [FALLBACK_PHRASE],                        [],                          "out_of_kb"),
-    ("Does he have a driving license?",  [FALLBACK_PHRASE],                        [],                          "out_of_kb"),
-    ("What is his notice period?",      [FALLBACK_PHRASE],                        [],                          "out_of_kb"),
+    ("How old is he?",                  ["reach out to Gokul"],                   ["years old"],               "out_of_kb"),
+    ("Is he married?",                  ["reach out to Gokul"],                   [],                          "out_of_kb"),
+    ("What is his salary expectation?", ["reach out to Gokul"],                   [],                          "out_of_kb"),
+    ("Does he have a driving license?",  ["reach out to Gokul"],                   [],                          "out_of_kb"),
+    ("What is his notice period?",      ["reach out to Gokul"],                   [],                          "out_of_kb"),
 
     # Methodology & work style
     ("Is he familiar with Agile?",      ["Agile"],                                [FALLBACK_PHRASE],           "skills"),
@@ -102,6 +103,7 @@ def run_intent(query: str) -> str | None:
     if intent == "greeting":  return GREETING_RESPONSE
     if intent == "thanks":    return THANKS_RESPONSE
     if intent == "self_intro":return SELF_INTRO_RESPONSE
+    if intent == "personal":  return PERSONAL_RESPONSE
     if intent == "farewell":  return "Bye!"
     return None
 

@@ -7,6 +7,17 @@ const POST_ANSWER_MS = 8000     // quiet after an answer → say goodbye, go idl
 const VAD_MIN        = 0.025    // absolute floor for the adaptive speech threshold
 const FAREWELL       = "Thank you! Glad to help — feel free to ask anytime."
 
+// Turns made only of these are mic noise / self-talk — never sent to the brain
+const FILLER_WORDS = new Set([
+  'okay', 'ok', 'alright', 'all', 'right', 'hmm', 'hm', 'mmm',
+  'uh', 'um', 'er', 'ah', 'yeah', 'ya', 'yes', 'no', 'so', 'well',
+])
+
+function isFillerOnly(text) {
+  const words = text.toLowerCase().replace(/[^a-z\s']/g, ' ').split(/\s+/).filter(Boolean)
+  return words.length > 0 && words.every(w => FILLER_WORDS.has(w))
+}
+
 // Per-browser-tab session: sessionStorage lives exactly until the tab closes
 function getSessionId() {
   let sid = sessionStorage.getItem('gokul_session')
@@ -155,6 +166,13 @@ export default function useVoiceAssistant() {
       })
       const data   = await res.json()
       const answer = data.answer || "I don't have that information."
+      if (data.end) {
+        // visitor said goodbye — speak the farewell and stop listening
+        turnsRef.current   = 0
+        historyRef.current = []
+        await speak(answer, false)
+        return
+      }
       historyRef.current = [...historyRef.current, { q: question, a: answer }].slice(-3)
       turnsRef.current += 1
       await speak(answer)
@@ -198,9 +216,9 @@ export default function useVoiceAssistant() {
       const res  = await fetch(`${API_BASE}/transcribe`, { method: 'POST', body: form })
       const data = await res.json()
       const text = (data.text || '').trim()
-      if (!text) {
-        setBoth('idle')
-        setTranscript('')
+      if (!text || isFillerOnly(text)) {
+        // nothing meaningful heard — keep the conversation open, listen again
+        beginListeningRef.current({ postAnswer: turnsRef.current > 0 })
         return
       }
       setTranscript(text)

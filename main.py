@@ -13,8 +13,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 import engine
-from intent import (detect_intent, GREETING_RESPONSE, THANKS_RESPONSE,
-                    SELF_INTRO_RESPONSE)
+from intent import (detect_intent, extract_contact, GREETING_RESPONSE,
+                    THANKS_RESPONSE, FAREWELL_RESPONSE, SELF_INTRO_RESPONSE,
+                    PERSONAL_RESPONSE, LEAD_RESPONSE)
 
 FALLBACK = (
     "That's something Gokul hasn't shared with me yet — "
@@ -23,6 +24,14 @@ FALLBACK = (
 
 WHISPER_MODEL = os.environ.get("GOKUL_WHISPER_MODEL", "base.en")
 PIPER_VOICE   = os.environ.get("GOKUL_PIPER_VOICE", "models/tts/en_US-lessac-medium.onnx")
+
+# Domain vocabulary seeds Whisper so proper nouns transcribe correctly
+# (visitors say "Riyad Capital", not "real capital")
+WHISPER_PROMPT = (
+    "Gokul, Gokula Kannan, OutSystems, ODC, O11, Riyad Capital, Riyadh, "
+    "Cordova, Capacitor, Neutrinos, Mphasis, Netlink, Onward Technologies, "
+    "Raspberry Pi, DevTools, Chrome extension, certifications, architect"
+)
 
 stt_model   = None   # faster-whisper
 tts_voice   = None   # piper
@@ -67,6 +76,15 @@ conn.execute("""CREATE TABLE IF NOT EXISTS conversations (
     intent     TEXT,
     timestamp  TEXT
 )""")
+conn.execute("""CREATE TABLE IF NOT EXISTS leads (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT,
+    client_ip  TEXT,
+    email      TEXT,
+    phone      TEXT,
+    message    TEXT,
+    timestamp  TEXT
+)""")
 conn.commit()
 
 
@@ -109,17 +127,39 @@ class Question(BaseModel):
 @app.post("/ask")
 async def ask(q: Question, request: Request):
     ip = client_ip_of(request)
+
+    # Visitor left contact details → store the lead, confirm, keep chatting
+    contact = extract_contact(q.text)
+    if contact:
+        conn.execute(
+            "INSERT INTO leads (session_id, client_ip, email, phone, message, timestamp) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (q.session_id, ip, contact["email"], contact["phone"],
+             contact["raw"], datetime.utcnow().isoformat())
+        )
+        conn.commit()
+        log_conversation(q.session_id, ip, q.text, LEAD_RESPONSE, "lead")
+        return {"answer": LEAD_RESPONSE, "end": False}
+
     intent = detect_intent(q.text)
 
     if intent == "greeting":
         log_conversation(q.session_id, ip, q.text, GREETING_RESPONSE, intent)
-        return {"answer": GREETING_RESPONSE}
+        return {"answer": GREETING_RESPONSE, "end": False}
     if intent == "thanks":
         log_conversation(q.session_id, ip, q.text, THANKS_RESPONSE, intent)
-        return {"answer": THANKS_RESPONSE}
+        return {"answer": THANKS_RESPONSE, "end": False}
+    if intent == "farewell":
+        # "end": True → frontend speaks this and goes idle instead of re-listening
+        log_conversation(q.session_id, ip, q.text, FAREWELL_RESPONSE, intent)
+        return {"answer": FAREWELL_RESPONSE, "end": True}
     if intent == "self_intro":
         log_conversation(q.session_id, ip, q.text, SELF_INTRO_RESPONSE, intent)
-        return {"answer": SELF_INTRO_RESPONSE}
+        return {"answer": SELF_INTRO_RESPONSE, "end": False}
+    if intent == "personal":
+        # private-life questions never reach the model
+        log_conversation(q.session_id, ip, q.text, PERSONAL_RESPONSE, intent)
+        return {"answer": PERSONAL_RESPONSE, "end": False}
 
     answer = engine.ask(q.text, q.history)
     log_conversation(q.session_id, ip, q.text, answer, "question")
@@ -132,7 +172,7 @@ async def ask(q: Question, request: Request):
         )
         conn.commit()
 
-    return {"answer": answer}
+    return {"answer": answer, "end": False}
 
 
 @app.post("/transcribe")
@@ -144,7 +184,8 @@ def transcribe(audio: UploadFile = File(...)):
         tmp.write(audio.file.read())
         path = tmp.name
     try:
-        segments, _ = stt_model.transcribe(path, language="en", beam_size=1)
+        segments, _ = stt_model.transcribe(path, language="en", beam_size=1,
+                                           initial_prompt=WHISPER_PROMPT)
         text = " ".join(s.text.strip() for s in segments).strip()
     finally:
         os.unlink(path)
@@ -188,6 +229,21 @@ async def get_conversations(request: Request, limit: int = 200):
     return [
         {"session": r[0], "ip": r[1], "question": r[2],
          "answer": r[3], "intent": r[4], "at": r[5]}
+        for r in rows
+    ]
+
+
+@app.get("/leads")
+async def get_leads(request: Request, limit: int = 100):
+    """Visitors who left contact details for Gokul to reach back."""
+    require_admin(request)
+    rows = conn.execute(
+        "SELECT session_id, client_ip, email, phone, message, timestamp "
+        "FROM leads ORDER BY id DESC LIMIT ?", (limit,)
+    ).fetchall()
+    return [
+        {"session": r[0], "ip": r[1], "email": r[2],
+         "phone": r[3], "message": r[4], "at": r[5]}
         for r in rows
     ]
 

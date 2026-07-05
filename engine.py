@@ -1,5 +1,6 @@
 # engine.py — full-context inference engine (shared by chat and API)
 import json
+import re
 from llama_cpp import Llama
 
 # MODEL_PATH = "./models/generator/llama-3.2-1b-instruct-q4.gguf"
@@ -25,12 +26,20 @@ def _build_system_prompt() -> str:
             facts_block += f"- {fact}\n"
 
     return (
-        "You are a concise AI assistant representing Gokul Kannan. "
+        "You are a concise AI assistant that answers questions about Gokula Kannan, known as Gokul. "
+        "NAME RULE: his full name is 'Gokula Kannan' and his short name is 'Gokul' — never write 'Gokul Kannan'. "
+        "You are the assistant, not Gokul — describe him in third person. "
+        "Name him once at the start of a conversation; in follow-up answers prefer pronouns (he, his, him) instead of repeating his name. "
+        "Write numbers as digits (8+, 2023). "
         "Answer ONLY using the facts listed below — nothing else. "
         "NEVER infer, guess, or connect dots between facts. "
         "NEVER use dates or context to imply unstated facts. "
+        "NEVER confirm a technology, skill, company, or claim that appears in the "
+        "user's question but is not in the facts — mention only the listed items. "
+        "PRIVACY RULE: never discuss age, marital status, family members, relationships, or income — "
+        "if asked, say to reach out to Gokul directly. Hobbies and interests are fine to share. "
         "EDUCATION RULE: Only mention degrees explicitly listed in the facts. Do not add any degree not written there. "
-        "If the answer is not explicitly stated in the facts, say: 'I don't have that information.' "
+        "If the facts do not contain the answer, reply EXACTLY: 'I don't have that information.' "
         "STRICT RULE: Reply in exactly 1-2 sentences. No lists, no headers.\n\n"
         f"FACTS ABOUT GOKUL:\n{facts_block}"
     )
@@ -74,7 +83,24 @@ def ask(question: str, history: list | None = None) -> str:
         messages=messages,
         max_tokens=80,
         temperature=0.15,
-        repeat_penalty=1.1,
+        repeat_penalty=1.15,
         stop=["<end_of_turn>", "\n\n\n", "\nQuestion", "\nUser"],
     )
-    return response["choices"][0]["message"]["content"].strip()
+    return _clean_response(response["choices"][0]["message"]["content"].strip())
+
+
+def _clean_response(text: str) -> str:
+    """Small models loop: drop repeated sentences and any sentence truncated
+    by the token limit — a half-sentence must never reach TTS."""
+    parts = re.split(r"(?<=[.!?])\s+", text)
+    seen: set[str] = set()
+    out: list[str] = []
+    for p in parts:
+        key = re.sub(r"\W+", " ", p.lower()).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(p.strip())
+    if out and not re.search(r"[.!?]$", out[-1]) and len(out) > 1:
+        out.pop()   # trailing fragment from hitting max_tokens
+    return " ".join(out)
