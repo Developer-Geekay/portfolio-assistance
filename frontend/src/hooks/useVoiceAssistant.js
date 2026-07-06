@@ -1,4 +1,7 @@
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useCallback, useEffect } from 'react'
+import { initWhisper, transcribeBlob, isWhisperReady } from './whisper'
+import { initPiper, piperGenerate, isPiperReady } from './piper'
+import { USE_WHISPER_WASM, USE_PIPER_WASM } from '../features'
 
 // vite dev proxy / nginx → FastAPI; override with VITE_API_BASE when mounted
 // inside another site whose /api is taken (e.g. /assistance-api in a portfolio)
@@ -42,11 +45,14 @@ function pickRecordingFormat() {
 }
 
 // Fully self-hosted voice loop:
-//   mic → MediaRecorder → /transcribe (Whisper) → /ask (Gemma) → /speak (Piper) → <audio>
+//   mic → MediaRecorder → Whisper WASM (browser) → /ask (Pi) → /speak (Piper) → <audio>
 // state machine: idle | listening | processing | speaking
 export default function useVoiceAssistant() {
   const [state, setState]           = useState('idle')
   const [transcript, setTranscript] = useState('')
+  const [modelReady, setModelReady]         = useState(false)
+  const [modelProgress, setModelProgress]   = useState(0)
+  const [piperReady, setPiperReady]         = useState(!USE_PIPER_WASM)
 
   const stateRef      = useRef('idle')
   const analyserRef   = useRef(null)    // mic while listening, playback while speaking
@@ -68,6 +74,22 @@ export default function useVoiceAssistant() {
   const outAnalyserRef = useRef(null)
 
   const setBoth = (s) => { stateRef.current = s; setState(s) }
+
+  // ── Whisper WASM: download model once on mount (only when feature enabled) ─
+  useEffect(() => {
+    if (!USE_WHISPER_WASM) { setModelReady(true); return }
+    initWhisper(({ progress }) => setModelProgress(Math.round(progress * 100)))
+      .then(() => { setModelReady(true); setModelProgress(100) })
+      .catch(e => console.warn('[whisper] model init failed:', e))
+  }, [])
+
+  // ── Piper WASM: load engine + warm up once on mount ────────────────
+  useEffect(() => {
+    if (!USE_PIPER_WASM) return
+    initPiper()
+      .then(() => setPiperReady(true))
+      .catch(e => console.warn('[piper] engine init failed:', e))
+  }, [])
 
   // ── playback plumbing ───────────────────────────────────────────────
   const ensurePlayback = useCallback(() => {
@@ -107,19 +129,31 @@ export default function useVoiceAssistant() {
     analyserRef.current = null
   }, [])
 
-  // ── speak: Piper WAV from the server through the shared <audio>.
+  // ── speak: WAV through the shared <audio> — source is either Piper WASM
+  // (browser) or the Pi /speak endpoint, controlled by VITE_PIPER_WASM.
   // Words stream into the transcript in sync with playback progress.
   const speak = useCallback(async (text, resumeAfter = true) => {
-    setBoth('speaking')
+    // Stay in 'processing' while the audio blob is being generated/fetched —
+    // only flip to 'speaking' once the audio is actually ready to play so
+    // the ring animation matches reality.
+    setBoth('processing')
     let syncIv
     try {
-      const res = await fetch(`${API_BASE}/speak`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ text }),
-      })
-      if (!res.ok) throw new Error(`speak ${res.status}`)
-      const blob = await res.blob()
+      let blob
+      if (USE_PIPER_WASM) {
+        const result = await piperGenerate(text)
+        blob = result.blob
+      } else {
+        const res = await fetch(`${API_BASE}/speak`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ text }),
+        })
+        if (!res.ok) throw new Error(`speak ${res.status}`)
+        blob = await res.blob()
+      }
+      // Audio is ready — transition visually to speaking now
+      setBoth('speaking')
       const url  = URL.createObjectURL(blob)
       const el   = audioElRef.current
       outCtxRef.current.resume()
@@ -213,11 +247,16 @@ export default function useVoiceAssistant() {
     setBoth('processing')
 
     try {
-      const form = new FormData()
-      form.append('audio', blob, `q.${formatRef.current.ext}`)
-      const res  = await fetch(`${API_BASE}/transcribe`, { method: 'POST', body: form })
-      const data = await res.json()
-      const text = (data.text || '').trim()
+      let text
+      if (USE_WHISPER_WASM) {
+        text = await transcribeBlob(blob)
+      } else {
+        const form = new FormData()
+        form.append('audio', blob, `q.${formatRef.current.ext}`)
+        const res  = await fetch(`${API_BASE}/transcribe`, { method: 'POST', body: form })
+        const data = await res.json()
+        text = (data.text || '').trim()
+      }
       if (!text || isFillerOnly(text)) {
         // nothing meaningful heard — keep the conversation open, listen again
         beginListeningRef.current({ postAnswer: turnsRef.current > 0 })
@@ -225,7 +264,8 @@ export default function useVoiceAssistant() {
       }
       setTranscript(text)
       await askApi(text)
-    } catch {
+    } catch (e) {
+      console.warn('[voice] transcription error:', e)
       await speak("Sorry, I couldn't reach the server.")
     }
   }, [stopMic, askApi, speak])
@@ -318,6 +358,8 @@ export default function useVoiceAssistant() {
   // Click on the ring: idle → listen; anything else → end the conversation
   const toggle = useCallback(() => {
     if (stateRef.current === 'idle') {
+      if (USE_WHISPER_WASM && !isWhisperReady()) return   // whisper still downloading
+      if (USE_PIPER_WASM   && !isPiperReady())   return   // piper still warming up
       ensurePlayback()   // user gesture unlocks audio output (iOS requirement)
       beginListening()
     } else {
@@ -325,5 +367,5 @@ export default function useVoiceAssistant() {
     }
   }, [ensurePlayback, beginListening, cancel])
 
-  return { state, stateRef, transcript, toggle, analyserRef }
+  return { state, stateRef, transcript, toggle, analyserRef, modelReady, modelProgress, piperReady }
 }

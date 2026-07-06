@@ -1,9 +1,29 @@
 import { useEffect, useRef, useState } from 'react'
 import useVoiceAssistant from '../hooks/useVoiceAssistant'
+import { USE_WHISPER_WASM, USE_PIPER_WASM } from '../features'
+import LoaderParticles from './LoaderParticles'
 import './Stage.css'
 
+const ANY_WASM = USE_WHISPER_WASM || USE_PIPER_WASM
+
 const N = 220   // ring particles
-const TAGLINE_MS = 8000
+const TAGLINE_MS   = 8000
+const LOADER_MSG_MS = 4500
+
+const LOADER_MSGS = [
+  "Running entirely on a Raspberry Pi 5. No cap.",
+  "No cloud. No API keys. Just ONNX and optimism.",
+  "Teaching silicon to pronounce 'Gokulakannan'…",
+  "Self-hosted AI: because the cloud is just someone else's Pi.",
+  "Loading 60 million parameters. They're a bit heavy.",
+  "Warming up the neural net. It gets cold easily.",
+  "Converting your patience into embeddings.",
+  "The model weighs less than your browser history.",
+  "Asking the ONNX runtime very nicely to behave.",
+  "Zero telemetry. Zero tracking. Just vibes.",
+  "Fun fact: this whole thing runs on $80 of hardware.",
+  "Whisper is transcribing. Piper is clearing its throat.",
+]
 
 // Idle rotation: assistant hints + general quotes (nothing personal)
 const TAGLINES = [
@@ -20,51 +40,114 @@ const TAGLINES = [
 ]
 
 export default function Stage() {
-  const stageRef   = useRef(null)
-  const canvasRef  = useRef(null)
-  const loaderRef  = useRef(null)
-  const loadBarRef = useRef(null)
+  const stageRef  = useRef(null)
+  const canvasRef = useRef(null)
 
-  const { state, stateRef, transcript, toggle, analyserRef } = useVoiceAssistant()
+  const { state, stateRef, transcript, toggle, analyserRef, modelReady, modelProgress, piperReady } = useVoiceAssistant()
 
   // toggle lives in a ref so the canvas click handler always sees the latest
   const toggleRef = useRef(toggle)
   useEffect(() => { toggleRef.current = toggle }, [toggle])
 
+  // ── loader state (React-owned, no ref bridge needed) ───────────────
+  // loaderDoneRef lets the canvas effect start the ring assembly animation
+  // without creating a closure dependency on loaderDone state.
+  const [loaderDone, setLoaderDone] = useState(false)
+  const loaderDoneRef = useRef(false)
+
+  // Progress bar percentage — driven by real Whisper progress or a fake fill
+  const [barPct, setBarPct] = useState(0)
+
+  // Fake fill: slowly increments toward 85 while WASM models are loading.
+  // Gives the user a sense of progress even when we have no real signal (Piper).
+  useEffect(() => {
+    if (!ANY_WASM || loaderDone) return
+    if (USE_WHISPER_WASM && !modelReady) {
+      // Real Whisper download progress takes priority
+      setBarPct(Math.max(barPct, modelProgress))
+      return
+    }
+    // Slow fake fill for Piper warmup (or no Whisper)
+    const iv = setInterval(() => {
+      setBarPct(p => Math.min(p + 0.4 + Math.random() * 0.4, 85))
+    }, 350)
+    return () => clearInterval(iv)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelReady, piperReady, modelProgress, loaderDone])
+
+  // Dismiss loader once both models are ready (or immediately for no-WASM).
+  useEffect(() => {
+    if (ANY_WASM) {
+      if (!modelReady || !piperReady) return
+      setBarPct(100)
+      const t = setTimeout(() => {
+        setLoaderDone(true)
+        loaderDoneRef.current = true
+      }, 400)
+      return () => clearTimeout(t)
+    } else {
+      // No WASM: fake loader for 1.4 s, then reveal ring
+      setBarPct(96)
+      const t = setTimeout(() => {
+        setBarPct(100)
+        setTimeout(() => { setLoaderDone(true); loaderDoneRef.current = true }, 300)
+      }, 1400)
+      return () => clearTimeout(t)
+    }
+  }, [modelReady, piperReady])
+
+  // stage.ready class enables CSS transitions for .legend, .start, .hint
+  useEffect(() => {
+    if (!loaderDone) return
+    const t = setTimeout(() => stageRef.current?.classList.add('ready'), 900)
+    return () => clearTimeout(t)
+  }, [loaderDone])
+
+  // ── rotating witty messages while loader is visible ─────────────────
+  const [loaderMsg, setLoaderMsg] = useState({ text: LOADER_MSGS[0], key: 0 })
+  useEffect(() => {
+    if (loaderDone) return
+    let idx = 0
+    const iv = setInterval(() => {
+      idx = (idx + 1) % LOADER_MSGS.length
+      setLoaderMsg(prev => ({ text: LOADER_MSGS[idx], key: prev.key + 1 }))
+    }, LOADER_MSG_MS)
+    return () => clearInterval(iv)
+  }, [loaderDone])
+
   // ── idle taglines: hints + general quotes, rotated while idle ──
   const [tagline, setTagline] = useState({ text: '', key: 0 })
-
   useEffect(() => {
     let idx = -1
     const rotate = () => {
-      if (stateRef.current !== 'idle') return   // pause rotation mid-conversation
+      if (stateRef.current !== 'idle') return
       idx = (idx + 1 + Math.floor(Math.random() * (TAGLINES.length - 1))) % TAGLINES.length
       setTagline(prev => ({ text: TAGLINES[idx], key: prev.key + 1 }))
     }
-    const firstTimer = setTimeout(rotate, 3500)   // wait for loader + ring assembly
+    const firstTimer = setTimeout(rotate, 3500)
     const iv = setInterval(rotate, TAGLINE_MS)
     return () => { clearTimeout(firstTimer); clearInterval(iv) }
   }, [stateRef])
 
+  // ── canvas: ring animation only (loader managed by React above) ─────
   useEffect(() => {
     const stage  = stageRef.current
     const canvas = canvasRef.current
     const ctx    = canvas.getContext('2d')
-    const loader  = loaderRef.current
-    const loadBar = loadBarRef.current
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
     let W, H, cx, cy, R
     let dust  = []
     let stars = []
     let animId
+    let assembled = 0
 
     const ring = []
     for (let i = 0; i < N; i++) {
       const a = (i / N) * Math.PI * 2
       ring.push({
         a,
-        x: Math.random() * window.innerWidth,   // start scattered
+        x: Math.random() * window.innerWidth,
         y: Math.random() * window.innerHeight,
         tx: 0, ty: 0,
         seed: Math.random() * 1000,
@@ -73,29 +156,7 @@ export default function Stage() {
       })
     }
 
-    // ---------- page loading ----------
-    let loaded    = false
-    let assembled = 0
-    let progress  = 0
-
-    const progressIv = setInterval(() => {
-      progress = Math.min(progress + Math.random() * 14 + 4, 96)
-      loadBar.style.width = progress + '%'
-    }, 180)
-
-    const loadTimer = setTimeout(() => {
-      clearInterval(progressIv)
-      loadBar.style.width = '100%'
-      setTimeout(() => {
-        loader.classList.add('done')
-        loaded = true
-        setTimeout(() => stage.classList.add('ready'), 900)
-      }, 350)
-    }, 1200)
-
     function resize() {
-      // size from the actual element box (not window.inner*) and scale for
-      // devicePixelRatio — mismatch between the two is what skews mobile
       const rect = stage.getBoundingClientRect()
       const dpr  = window.devicePixelRatio || 1
       W = rect.width
@@ -125,7 +186,6 @@ export default function Stage() {
     window.addEventListener('resize', resize)
     resize()
 
-    // simple layered sine noise
     function wob(a, t, seed) {
       return Math.sin(a * 3 + t * 0.5 + seed) * 0.5
            + Math.sin(a * 5 - t * 0.32 + seed * 2) * 0.3
@@ -137,9 +197,9 @@ export default function Stage() {
     let listenAmt = 0
     let level = 0
     let ripples = []
-    let spin = 0            // ring rotation — spins up while processing
+    let spin = 0
     let spinVel = 0.0035
-    let procAmt = 0         // eased 0→1 while processing (sweep arc)
+    let procAmt = 0
     const freq = new Uint8Array(128)
 
     const onMouseMove = (e) => { mx = e.clientX; my = e.clientY }
@@ -148,7 +208,6 @@ export default function Stage() {
     window.addEventListener('touchmove', onTouchMove, { passive: true })
 
     const onClick = (e) => {
-      // use the event's own coordinates — mobile taps never fire mousemove
       const d = Math.hypot(e.clientX - cx, e.clientY - cy)
       if (d < R * 1.6) toggleRef.current()
     }
@@ -160,11 +219,10 @@ export default function Stage() {
       t += reduceMotion ? 0 : 0.012
       ctx.clearRect(0, 0, W, H)
 
-      const vState = stateRef.current                 // idle | listening | processing | speaking
+      const vState = stateRef.current
       const active = vState !== 'idle'
       stage.classList.toggle('listening', active)
 
-      // constellation network — drifting, kept clear of the center
       const clearR = R * 1.15
       const LINK = 130
       for (const s of stars) {
@@ -203,7 +261,6 @@ export default function Stage() {
         ctx.fill()
       }
 
-      // sparse background dust
       for (const d of dust) {
         d.tw += d.tws
         ctx.fillStyle = `rgba(223,230,236,${d.a * (0.5 + 0.5 * Math.sin(d.tw))})`
@@ -212,31 +269,25 @@ export default function Stage() {
         ctx.fill()
       }
 
-      // proximity → gather (disabled while active)
       const md = Math.hypot(mx - cx, my - cy)
       const target = active ? 0 : Math.max(0, Math.min(1, 1 - (md - R) / (R * 2.2)))
       gather += (target - gather) * 0.04
       stage.classList.toggle('near', gather > 0.55 && !active)
 
-      // ease in/out of active mode
       listenAmt += ((active ? 1 : 0) - listenAmt) * 0.05
 
-      // voice amplitude: real audio both ways — mic while listening,
-      // Piper playback while speaking (analyserRef points at the right one)
       let raw = 0
       if ((vState === 'listening' || vState === 'speaking') && analyserRef.current) {
         analyserRef.current.getByteFrequencyData(freq)
         raw = Math.min(1, (freq.reduce((s, v) => s + v, 0) / freq.length / 255) * 3)
       } else if (vState === 'speaking') {
-        raw = 0.15 + Math.max(0, Math.sin(t * 3.1)) * 0.1   // fallback if analyser missing
+        raw = 0.15 + Math.max(0, Math.sin(t * 3.1)) * 0.1
       } else if (vState === 'processing') {
         raw = 0.15 + Math.sin(t * 1.4) * 0.08
       }
-      // fast attack on word pulses while speaking, smooth everywhere else
       const easeRate = vState === 'speaking' && raw > level ? 0.3 : (active ? 0.12 : 0.06)
       level += (raw - level) * easeRate
 
-      // spawn ripples on amplitude peaks
       if (active && level > 0.55 && Math.random() < 0.08) {
         ripples.push({ r: R * 1.02, a: 0.35 })
       }
@@ -252,10 +303,9 @@ export default function Stage() {
         ctx.stroke()
       }
 
-      // assembly: after load, particles converge from scatter into the ring
-      if (loaded) assembled += (1 - assembled) * 0.03
+      // ring assembly starts as soon as loaderDoneRef is set
+      if (loaderDoneRef.current) assembled += (1 - assembled) * 0.03
 
-      // ring spins up noticeably while the answer is being generated
       const spinTarget = vState === 'processing' ? 0.045 : 0.0035
       spinVel += (spinTarget - spinVel) * 0.06
       spin += spinVel
@@ -278,7 +328,7 @@ export default function Stage() {
         p.tx = cx + Math.cos(p.a + spin) * rr
         p.ty = cy + Math.sin(p.a + spin) * rr
         const ease = (0.08 + listenAmt * 0.12) * (0.15 + 0.85 * assembled)
-        if (loaded) {
+        if (loaderDoneRef.current) {
           p.x += (p.tx - p.x) * ease
           p.y += (p.ty - p.y) * ease
         } else {
@@ -295,7 +345,6 @@ export default function Stage() {
         ctx.fill()
       }
 
-      // processing: bright arc sweeping around the ring — "thinking" spinner
       if (procAmt > 0.02) {
         const sweep = t * 2.4
         ctx.strokeStyle = `rgba(223,230,236,${0.4 * procAmt})`
@@ -310,7 +359,6 @@ export default function Stage() {
         ctx.stroke()
       }
 
-      // inner echo ring — a smaller mirrored waveform, only while active
       if (listenAmt > 0.02) {
         ctx.strokeStyle = `rgba(223,230,236,${0.10 * listenAmt * (0.4 + level)})`
         ctx.lineWidth = 0.6
@@ -327,7 +375,6 @@ export default function Stage() {
         ctx.stroke()
       }
 
-      // faint connecting thread between neighbors
       ctx.strokeStyle = `rgba(223,230,236,${(0.05 + gather * 0.06 + listenAmt * (0.05 + level * 0.12)) * Math.max(0, assembled * 1.4 - 0.4)})`
       ctx.lineWidth = 0.5
       ctx.beginPath()
@@ -342,8 +389,6 @@ export default function Stage() {
 
     return () => {
       cancelAnimationFrame(animId)
-      clearInterval(progressIv)
-      clearTimeout(loadTimer)
       window.removeEventListener('resize', resize)
       window.removeEventListener('mousemove', onMouseMove)
       window.removeEventListener('touchmove', onTouchMove)
@@ -363,9 +408,20 @@ export default function Stage() {
       {state !== 'idle' && (
         <p className="transcript">{transcript || (state === 'listening' ? '· · ·' : '')}</p>
       )}
-      <div className="loader" ref={loaderRef}>
-        <div className="dots"><i></i><i></i><i></i></div>
-        <div className="track"><div className="bar" ref={loadBarRef}></div></div>
+
+      <div className={`loader${loaderDone ? ' done' : ''}`}>
+        <div className="loader-msg" key={loaderMsg.key}>{loaderMsg.text}</div>
+        <LoaderParticles />
+        <div className="loader-bar-wrap">
+          <div className="track">
+            <div className="bar" style={{ width: `${barPct}%` }} />
+          </div>
+          {ANY_WASM && (
+            <span className="loader-pct">
+              {loaderDone ? '✓' : barPct < 100 ? `${Math.round(barPct)}%` : ''}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   )

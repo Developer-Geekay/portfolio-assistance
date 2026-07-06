@@ -14,7 +14,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 26px;
+  gap: 28px;
   background: var(--bg);
   transition: opacity 1.2s ease;
 }
@@ -22,6 +22,56 @@
   opacity: 0;
   pointer-events: none;
 }
+
+/* rotating witty message */
+.loader-msg {
+  max-width: 54vw;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 300;
+  letter-spacing: 0.12em;
+  line-height: 1.8;
+  color: var(--dim);
+  animation: loaderMsgFade 2.8s ease-in-out forwards;
+}
+@keyframes loaderMsgFade {
+  0%       { opacity: 0; transform: translateY(6px); }
+  18%, 72% { opacity: 1; transform: translateY(0);   }
+  100%     { opacity: 0; transform: translateY(-4px); }
+}
+
+/* progress bar + percentage */
+.loader-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.loader .track {
+  width: 200px;
+  height: 2px;
+  background: rgba(223, 230, 236, 0.08);
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+}
+.loader .track .bar {
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  width: 0%;
+  background: rgba(223, 230, 236, 0.55);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+  box-shadow: 0 0 8px rgba(223, 230, 236, 0.3);
+}
+.loader-pct {
+  font-size: 10px;
+  font-weight: 300;
+  letter-spacing: 0.1em;
+  color: var(--faint);
+  min-width: 26px;
+}
+
+/* breathing dots */
 .loader .dots {
   display: flex;
   gap: 10px;
@@ -31,28 +81,12 @@
   height: 3px;
   border-radius: 50%;
   background: var(--white);
-  opacity: 0.2;
-  animation: dotpulse 1.4s ease-in-out infinite;
+  opacity: 0.15;
+  animation: dotpulse 1.6s ease-in-out infinite;
 }
-.loader .dots i:nth-child(2) { animation-delay: 0.2s; }
-.loader .dots i:nth-child(3) { animation-delay: 0.4s; }
-@keyframes dotpulse { 50% { opacity: 0.9; } }
-.loader .track {
-  width: 120px;
-  height: 1px;
-  background: var(--faint);
-  position: relative;
-  overflow: hidden;
-}
-.loader .track .bar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: 0%;
-  background: var(--dim);
-  transition: width 0.3s ease;
-}
+.loader .dots i:nth-child(2) { animation-delay: 0.28s; }
+.loader .dots i:nth-child(3) { animation-delay: 0.56s; }
+@keyframes dotpulse { 50% { opacity: 0.7; } }
 
 /* ---- legend ---- */
 .legend {
