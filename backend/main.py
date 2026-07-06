@@ -261,6 +261,30 @@ async def get_sessions(request: Request, limit: int = 50):
     ]
 
 
+@app.get("/stats")
+async def get_stats(request: Request):
+    """Aggregate analytics for the admin dashboard."""
+    require_admin(request)
+    turns    = conn.execute("SELECT COUNT(*) FROM conversations").fetchone()[0]
+    sessions = conn.execute(
+        "SELECT COUNT(DISTINCT session_id) FROM conversations WHERE session_id != ''"
+    ).fetchone()[0]
+    leads    = conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
+    unknown  = conn.execute("SELECT COUNT(*) FROM queries").fetchone()[0]
+    intents  = conn.execute(
+        "SELECT intent, COUNT(*) FROM conversations GROUP BY intent ORDER BY COUNT(*) DESC"
+    ).fetchall()
+    daily    = conn.execute(
+        "SELECT substr(timestamp, 1, 10) AS day, COUNT(*), COUNT(DISTINCT session_id) "
+        "FROM conversations GROUP BY day ORDER BY day DESC LIMIT 14"
+    ).fetchall()
+    return {
+        "turns": turns, "sessions": sessions, "leads": leads, "unknown": unknown,
+        "intents": [{"intent": r[0], "count": r[1]} for r in intents],
+        "daily":   [{"day": r[0], "turns": r[1], "sessions": r[2]} for r in daily],
+    }
+
+
 @app.get("/unknown-queries")
 async def get_unknown(request: Request):
     require_admin(request)

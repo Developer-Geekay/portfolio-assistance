@@ -22,6 +22,11 @@ Designed to run on a Raspberry Pi 5 (8GB) — CPU-only, small quantized models.
   step, no embedding misses; follow-up questions and negations work.
 - **Self-hosted speech** — faster-whisper for speech-to-text, Piper for
   text-to-speech. Works on iOS, Android, and desktop (no Web Speech API).
+- **Optional browser WASM speech** — `VITE_WHISPER_WASM` / `VITE_PIPER_WASM`
+  flags move transcription and synthesis into the visitor's browser
+  (models cached locally after first download), offloading the Pi. A
+  particle-morph loading screen entertains the wait. Server-side remains
+  the default and the recommended production path.
 - **Guardrails** — hallucination guard (won't confirm skills planted in the
   question), privacy gate (personal/career-negotiation topics deflect to
   direct contact), third-person persona rules.
@@ -30,6 +35,10 @@ Designed to run on a Raspberry Pi 5 (8GB) — CPU-only, small quantized models.
 - **Analytics** — every turn logged per browser-tab session with client IP;
   admin-key-protected endpoints for sessions, conversations, leads, and
   unanswered questions.
+- **Admin dashboard** — `/assistant-admin` on the frontend: leads, sessions,
+  full conversation log, unanswered questions, daily activity, and intent
+  breakdown. The page shell is public but every data call requires the
+  admin key.
 - **KB builder** — conversational interview tool (`kb_builder.py`) so anyone
   can build their own knowledge base with the same local model.
 
@@ -81,10 +90,12 @@ click the ring, and talk. For phone testing use `https://<your-lan-ip>:5173`
 | `/sessions` | GET | `X-Admin-Key` | Per-session summaries |
 | `/leads` | GET | `X-Admin-Key` | Captured visitor contacts |
 | `/unknown-queries` | GET | `X-Admin-Key` | Questions the KB couldn't answer |
+| `/stats` | GET | `X-Admin-Key` | Aggregate analytics (totals, intents, daily activity) |
 | `/retrain` | POST | `X-Admin-Key` | Reload the KB without restart |
 
 Admin endpoints stay disabled (503) until `ADMIN_KEY` is set in
-`backend/.env`.
+`backend/.env`. The admin dashboard at `https://localhost:5173/assistant-admin`
+presents all of them in one page.
 
 ## Testing
 

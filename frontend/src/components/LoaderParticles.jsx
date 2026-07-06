@@ -1,165 +1,189 @@
 import { useEffect, useRef } from 'react'
 
-const W       = 220
-const H       = 120
-const N       = 180
+const W = 220, H = 120
+const N = 150            // particles — outlines read crisp with ~150 dots
 const SHAPE_MS = 3600
-const LERP    = 0.055
-const OFF_W   = 120
-const OFF_H   = 80
-const DOT_R   = 1.8
+const PAD = 10           // px margin inside the canvas
+const TAU = Math.PI * 2
 
-// Each function draws a bold white shape on a (w × h) offscreen canvas.
-// fillStyle and strokeStyle are pre-set to 'white' before each call.
-// Rules: use lineWidth ≥ h*0.18 for strokes; fill everything solid so
-// the pixel sampler gets a dense cloud to target.
-const SHAPES = [
-  // Heart (bezier fill)
-  (c, w, h) => {
-    c.beginPath()
-    c.moveTo(w * 0.5, h * 0.80)
-    c.bezierCurveTo(w * 0.04, h * 0.36, w * 0.04, h * 0.08, w * 0.5,  h * 0.34)
-    c.bezierCurveTo(w * 0.96, h * 0.08, w * 0.96, h * 0.36, w * 0.5,  h * 0.80)
-    c.fill()
-  },
+// ── path helpers ─────────────────────────────────────────────────────
+// Every shape is a set of polylines (outlines) in arbitrary coordinates;
+// they get uniformly scaled + centered onto the canvas, then resampled
+// to exactly N points evenly spaced by arc length. Outlines stay crisp
+// where filled pixel-sampling turns to mush.
 
-  // 5-point star (filled, distinct inner radius)
-  (c, w, h) => {
-    const r1 = Math.min(w, h) * 0.45, r2 = r1 * 0.40
-    const cx = w / 2, cy = h * 0.52
-    c.beginPath()
-    for (let i = 0; i < 10; i++) {
-      const r = i % 2 === 0 ? r1 : r2
-      const a = (i / 10) * Math.PI * 2 - Math.PI / 2
-      i === 0 ? c.moveTo(cx + r * Math.cos(a), cy + r * Math.sin(a))
-              : c.lineTo(cx + r * Math.cos(a), cy + r * Math.sin(a))
-    }
-    c.closePath(); c.fill()
-  },
-
-  // Circle ring (very thick stroke so plenty of pixels to sample)
-  (c, w, h) => {
-    c.lineWidth = h * 0.24
-    c.beginPath()
-    c.arc(w * 0.5, h * 0.5, Math.min(w, h) * 0.32, 0, Math.PI * 2)
-    c.stroke()
-  },
-
-  // Arrow pointing right (filled solid)
-  (c, w, h) => {
-    c.beginPath()
-    c.moveTo(w * 0.08, h * 0.34); c.lineTo(w * 0.60, h * 0.34)
-    c.lineTo(w * 0.60, h * 0.15); c.lineTo(w * 0.94, h * 0.50)
-    c.lineTo(w * 0.60, h * 0.85); c.lineTo(w * 0.60, h * 0.66)
-    c.lineTo(w * 0.08, h * 0.66)
-    c.closePath(); c.fill()
-  },
-
-  // Lightning bolt (filled)
-  (c, w, h) => {
-    c.beginPath()
-    c.moveTo(w * 0.64, h * 0.02)
-    c.lineTo(w * 0.28, h * 0.52); c.lineTo(w * 0.54, h * 0.52)
-    c.lineTo(w * 0.26, h * 0.98)
-    c.lineTo(w * 0.72, h * 0.48); c.lineTo(w * 0.46, h * 0.48)
-    c.lineTo(w * 0.76, h * 0.02)
-    c.closePath(); c.fill()
-  },
-
-  // Diamond / rhombus (filled, wide)
-  (c, w, h) => {
-    c.beginPath()
-    c.moveTo(w * 0.50, h * 0.04)
-    c.lineTo(w * 0.96, h * 0.50)
-    c.lineTo(w * 0.50, h * 0.96)
-    c.lineTo(w * 0.04, h * 0.50)
-    c.closePath(); c.fill()
-  },
-
-  // Pi symbol (two thick legs + horizontal bar)
-  (c, w, h) => {
-    c.lineWidth = h * 0.20; c.lineCap = 'square'
-    // horizontal bar
-    c.beginPath(); c.moveTo(w * 0.10, h * 0.22); c.lineTo(w * 0.90, h * 0.22); c.stroke()
-    // left leg
-    c.beginPath(); c.moveTo(w * 0.28, h * 0.22); c.lineTo(w * 0.28, h * 0.92); c.stroke()
-    // right leg curves slightly
-    c.lineWidth = h * 0.19; c.lineCap = 'round'
-    c.beginPath()
-    c.moveTo(w * 0.68, h * 0.22)
-    c.quadraticCurveTo(w * 0.80, h * 0.68, w * 0.62, h * 0.92)
-    c.stroke()
-  },
-
-  // Cloud (three overlapping circles + base fill)
-  (c, w, h) => {
-    for (const [x, y, r] of [[0.30, 0.54, 0.19],[0.50, 0.40, 0.25],[0.70, 0.54, 0.19]]) {
-      c.beginPath(); c.arc(w * x, h * y, w * r, 0, Math.PI * 2); c.fill()
-    }
-    c.fillRect(w * 0.11, h * 0.55, w * 0.78, h * 0.28)
-  },
-
-  // Crescent moon (big circle minus offset circle)
-  (c, w, h) => {
-    c.beginPath(); c.arc(w * 0.44, h * 0.50, h * 0.40, 0, Math.PI * 2); c.fill()
-    c.fillStyle = 'black'
-    c.beginPath(); c.arc(w * 0.60, h * 0.42, h * 0.30, 0, Math.PI * 2); c.fill()
-  },
-
-  // Rocket (nose + body + two fins)
-  (c, w, h) => {
-    c.beginPath()                        // nose cone
-    c.moveTo(w * 0.50, h * 0.03); c.lineTo(w * 0.70, h * 0.50); c.lineTo(w * 0.30, h * 0.50)
-    c.closePath(); c.fill()
-    c.fillRect(w * 0.30, h * 0.48, w * 0.40, h * 0.28) // body
-    c.beginPath()                        // left fin
-    c.moveTo(w * 0.30, h * 0.60); c.lineTo(w * 0.12, h * 0.88); c.lineTo(w * 0.30, h * 0.82)
-    c.closePath(); c.fill()
-    c.beginPath()                        // right fin
-    c.moveTo(w * 0.70, h * 0.60); c.lineTo(w * 0.88, h * 0.88); c.lineTo(w * 0.70, h * 0.82)
-    c.closePath(); c.fill()
-  },
-
-  // Bird (bold flying-V stroke)
-  (c, w, h) => {
-    c.lineWidth = h * 0.22; c.lineCap = 'round'; c.lineJoin = 'round'
-    c.beginPath()
-    c.moveTo(w * 0.08, h * 0.30)
-    c.quadraticCurveTo(w * 0.32, h * 0.65, w * 0.50, h * 0.48)
-    c.quadraticCurveTo(w * 0.68, h * 0.65, w * 0.92, h * 0.30)
-    c.stroke()
-  },
-
-  // Equilateral triangle (filled, tall so clearly not a blob)
-  (c, w, h) => {
-    c.beginPath()
-    c.moveTo(w * 0.50, h * 0.04)
-    c.lineTo(w * 0.96, h * 0.94)
-    c.lineTo(w * 0.04, h * 0.94)
-    c.closePath(); c.fill()
-  },
-]
-
-function samplePoints(drawFn, n) {
-  const off = document.createElement('canvas')
-  off.width = OFF_W; off.height = OFF_H
-  const c = off.getContext('2d')
-  c.fillStyle = 'white'; c.strokeStyle = 'white'
-  drawFn(c, OFF_W, OFF_H)
-  const data = c.getImageData(0, 0, OFF_W, OFF_H).data
+function circle(cx, cy, r, from = 0, to = TAU, steps = 60) {
   const pts = []
-  for (let y = 0; y < OFF_H; y++)
-    for (let x = 0; x < OFF_W; x++)
-      if (data[(y * OFF_W + x) * 4] > 128)
-        pts.push([x / OFF_W, y / OFF_H])
-  if (!pts.length) return Array.from({ length: n }, () => [0.5, 0.5])
-  return Array.from({ length: n }, () => {
-    const p = pts[Math.floor(Math.random() * pts.length)]
-    // tiny jitter so co-located particles spread apart slightly
-    return [p[0] + (Math.random() - 0.5) * 0.015, p[1] + (Math.random() - 0.5) * 0.015]
-  })
+  for (let i = 0; i <= steps; i++) {
+    const a = from + (to - from) * (i / steps)
+    pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)])
+  }
+  return pts
 }
 
+function ellipse(cx, cy, rx, ry, rot = 0, steps = 60) {
+  const cos = Math.cos(rot), sin = Math.sin(rot)
+  const pts = []
+  for (let i = 0; i <= steps; i++) {
+    const a = TAU * (i / steps)
+    const x = rx * Math.cos(a), y = ry * Math.sin(a)
+    pts.push([cx + x * cos - y * sin, cy + x * sin + y * cos])
+  }
+  return pts
+}
+
+function bezier(p0, p1, p2, steps = 40) {
+  const pts = []
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps, u = 1 - t
+    pts.push([
+      u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0],
+      u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1],
+    ])
+  }
+  return pts
+}
+
+const close = (poly) => [...poly, poly[0]]
+
+// ── shapes ───────────────────────────────────────────────────────────
+const SHAPES = [
+  // Heart — the classic parametric heart curve
+  () => {
+    const pts = []
+    for (let i = 0; i <= 100; i++) {
+      const t = TAU * (i / 100)
+      pts.push([
+        16 * Math.sin(t) ** 3,
+        -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)),
+      ])
+    }
+    return [pts]
+  },
+
+  // Star — 5 points
+  () => {
+    const pts = []
+    for (let i = 0; i <= 10; i++) {
+      const r = i % 2 === 0 ? 1 : 0.42
+      const a = -Math.PI / 2 + TAU * (i / 10)
+      pts.push([r * Math.cos(a), r * Math.sin(a)])
+    }
+    return [pts]
+  },
+
+  // Infinity — lemniscate of Bernoulli
+  () => {
+    const pts = []
+    for (let i = 0; i <= 100; i++) {
+      const t = TAU * (i / 100)
+      const d = 1 + Math.sin(t) ** 2
+      pts.push([Math.cos(t) / d, (Math.sin(t) * Math.cos(t)) / d])
+    }
+    return [pts]
+  },
+
+  // Atom — three crossed electron orbits
+  () => [
+    ellipse(0, 0, 1, 0.35, 0),
+    ellipse(0, 0, 1, 0.35, Math.PI / 3),
+    ellipse(0, 0, 1, 0.35, -Math.PI / 3),
+  ],
+
+  // Saturn — planet with ring
+  () => [
+    circle(0, 0, 0.52),
+    ellipse(0, 0, 1.05, 0.20, 0),
+  ],
+
+  // Rocket — hull, fins, nose
+  () => [close([
+    [0.50, 0.00], [0.65, 0.26], [0.65, 0.62], [0.86, 0.90], [0.62, 0.80],
+    [0.62, 0.92], [0.38, 0.92], [0.38, 0.80], [0.14, 0.90], [0.35, 0.62],
+    [0.35, 0.26],
+  ])],
+
+  // Lightning bolt
+  () => [close([
+    [0.62, 0.00], [0.25, 0.55], [0.47, 0.55],
+    [0.32, 1.00], [0.78, 0.42], [0.55, 0.42],
+  ])],
+
+  // Bird — two wing arcs
+  () => [[
+    ...bezier([0.00, 0.35], [0.25, 0.75], [0.50, 0.50]),
+    ...bezier([0.50, 0.50], [0.75, 0.75], [1.00, 0.35]),
+  ]],
+
+  // Music note — head, stem, flag
+  () => [
+    ellipse(0.36, 0.82, 0.13, 0.09, -0.35),
+    [[0.485, 0.80], [0.485, 0.12]],
+    bezier([0.485, 0.12], [0.74, 0.24], [0.60, 0.52]),
+  ],
+
+  // Smiley — face, smile, eyes
+  () => [
+    circle(0, 0, 1),
+    circle(0, 0.08, 0.55, TAU * 0.08, TAU * 0.42),
+    circle(-0.35, -0.28, 0.10),
+    circle(0.35, -0.28, 0.10),
+  ],
+
+  // Heartbeat pulse — ECG line
+  () => [[
+    [0.00, 0.50], [0.28, 0.50], [0.36, 0.16],
+    [0.46, 0.86], [0.54, 0.30], [0.60, 0.50], [1.00, 0.50],
+  ]],
+
+  // Gem — faceted diamond
+  () => [
+    close([[0.2, 0], [0.8, 0], [1, 0.32], [0.5, 1], [0, 0.32]]),
+    [[0, 0.32], [1, 0.32]],
+    [[0.2, 0], [0.38, 0.32], [0.5, 1]],
+    [[0.8, 0], [0.62, 0.32], [0.5, 1]],
+  ],
+]
+
+// ── sampling ─────────────────────────────────────────────────────────
+// Uniformly scale + center paths into the canvas (aspect preserved),
+// then place n points evenly by arc length across all subpaths.
+function shapeTargets(paths, n) {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+  for (const path of paths)
+    for (const [x, y] of path) {
+      if (x < minX) minX = x; if (x > maxX) maxX = x
+      if (y < minY) minY = y; if (y > maxY) maxY = y
+    }
+  const s  = Math.min((W - PAD * 2) / (maxX - minX || 1), (H - PAD * 2) / (maxY - minY || 1))
+  const ox = (W - (maxX - minX) * s) / 2 - minX * s
+  const oy = (H - (maxY - minY) * s) / 2 - minY * s
+
+  const segs = []
+  let total = 0
+  for (const path of paths)
+    for (let i = 0; i < path.length - 1; i++) {
+      const x1 = path[i][0] * s + ox,     y1 = path[i][1] * s + oy
+      const x2 = path[i + 1][0] * s + ox, y2 = path[i + 1][1] * s + oy
+      const len = Math.hypot(x2 - x1, y2 - y1)
+      if (len === 0) continue
+      segs.push({ x1, y1, x2, y2, len, start: total })
+      total += len
+    }
+
+  const pts = []
+  let si = 0
+  for (let i = 0; i < n; i++) {
+    const d = (i / n) * total
+    while (si < segs.length - 1 && segs[si].start + segs[si].len < d) si++
+    const g = segs[si]
+    const t = Math.min(1, (d - g.start) / g.len)
+    pts.push([g.x1 + (g.x2 - g.x1) * t, g.y1 + (g.y2 - g.y1) * t])
+  }
+  return pts
+}
+
+// ── component ────────────────────────────────────────────────────────
 export default function LoaderParticles() {
   const ref = useRef(null)
 
@@ -168,42 +192,56 @@ export default function LoaderParticles() {
     if (!canvas) return
     const ctx = canvas.getContext('2d')
 
-    const PAD = 0.08
-    const px = Float32Array.from({ length: N }, () => PAD + Math.random() * (1 - PAD * 2))
-    const py = Float32Array.from({ length: N }, () => PAD + Math.random() * (1 - PAD * 2))
-    const tx = new Float32Array(N)
-    const ty = new Float32Array(N)
-
-    function setShape(fn) {
-      const pts = samplePoints(fn, N)
-      for (let i = 0; i < N; i++) {
-        tx[i] = PAD + pts[i][0] * (1 - PAD * 2)
-        ty[i] = PAD + pts[i][1] * (1 - PAD * 2)
-      }
+    const px = new Float32Array(N), py = new Float32Array(N)
+    const tx = new Float32Array(N), ty = new Float32Array(N)
+    const speed = new Float32Array(N)   // per-particle easing — organic morphs
+    const size  = new Float32Array(N)
+    const phase = new Float32Array(N)   // twinkle + breathing offset
+    for (let i = 0; i < N; i++) {
+      px[i] = Math.random() * W
+      py[i] = Math.random() * H
+      speed[i] = 0.045 + Math.random() * 0.05
+      size[i]  = 1.1 + Math.random() * 1.0
+      phase[i] = Math.random() * TAU
     }
 
     let idx = Math.floor(Math.random() * SHAPES.length)
-    setShape(SHAPES[idx])
+    function setShape(shapeIdx) {
+      const pts = shapeTargets(SHAPES[shapeIdx](), N)
+      // random rotation of the index mapping — particles sweep along the
+      // outline to their new posts instead of everyone moving in lockstep
+      const off = Math.floor(Math.random() * N)
+      for (let i = 0; i < N; i++) {
+        tx[i] = pts[(i + off) % N][0]
+        ty[i] = pts[(i + off) % N][1]
+      }
+    }
+    setShape(idx)
 
     const iv = setInterval(() => {
       idx = (idx + 1 + Math.floor(Math.random() * (SHAPES.length - 1))) % SHAPES.length
-      setShape(SHAPES[idx])
+      setShape(idx)
     }, SHAPE_MS)
 
     let animId
-    function step() {
+    function step(now) {
       animId = requestAnimationFrame(step)
+      const t = now / 1000
       ctx.clearRect(0, 0, W, H)
       for (let i = 0; i < N; i++) {
-        px[i] += (tx[i] - px[i]) * LERP
-        py[i] += (ty[i] - py[i]) * LERP
-        ctx.fillStyle = 'rgba(223,230,236,0.72)'
+        px[i] += (tx[i] - px[i]) * speed[i]
+        py[i] += (ty[i] - py[i]) * speed[i]
+        // subtle breathing so the settled shape stays alive
+        const bx = Math.sin(t * 1.3 + phase[i]) * 1.1
+        const by = Math.cos(t * 1.1 + phase[i]) * 1.1
+        const alpha = 0.55 + 0.3 * Math.sin(t * 2 + phase[i])
+        ctx.fillStyle = `rgba(223,230,236,${alpha})`
         ctx.beginPath()
-        ctx.arc(px[i] * W, py[i] * H, DOT_R, 0, Math.PI * 2)
+        ctx.arc(px[i] + bx, py[i] + by, size[i], 0, TAU)
         ctx.fill()
       }
     }
-    step()
+    animId = requestAnimationFrame(step)
 
     return () => { cancelAnimationFrame(animId); clearInterval(iv) }
   }, [])

@@ -123,8 +123,16 @@ sudo systemctl status gokul-ai     # journalctl -u gokul-ai -f for logs
 ```bash
 cd /opt/gokul-ai/frontend
 npm install
+cp .env.example .env               # defaults are fine for a standard deploy
 npm run build                      # outputs frontend/dist
 ```
+
+Optional: set `VITE_WHISPER_WASM=true` / `VITE_PIPER_WASM=true` in
+`frontend/.env` before building to run speech-to-text / text-to-speech in
+the visitor's browser instead of on the Pi (~60–75 MB model download per
+feature, cached after the first visit). Requires the cross-origin
+isolation headers in the nginx config below. Server-side (the default) is
+recommended — browser WASM trades Pi CPU for a heavy first load.
 
 ## 7. nginx + HTTPS
 
@@ -147,11 +155,17 @@ server {
     ssl_certificate     /etc/letsencrypt/live/your-domain.example/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/your-domain.example/privkey.pem;
 
-    # frontend
+    # frontend (also serves the admin dashboard at /assistant-admin)
     root /opt/gokul-ai/frontend/dist;
     index index.html;
     location / {
         try_files $uri /index.html;
+
+        # Only needed when built with VITE_WHISPER_WASM=true or
+        # VITE_PIPER_WASM=true — browser WASM threading requires
+        # cross-origin isolation on every response:
+        # add_header Cross-Origin-Embedder-Policy require-corp;
+        # add_header Cross-Origin-Opener-Policy   same-origin;
     }
 
     # backend
@@ -178,6 +192,8 @@ opening ports; both give you valid HTTPS to the Pi.
 ## 8. Verify
 
 - `https://your-domain.example` — ring loads, click, ask by voice, hear answer
+- Admin dashboard: `https://your-domain.example/assistant-admin` — enter the
+  admin key to see leads, sessions, conversations, and activity charts
 - Analytics (from anywhere):
   `curl -H "X-Admin-Key: <key>" https://your-domain.example/api/sessions`
 - Leads: `.../api/leads` — visitors who left contact details
