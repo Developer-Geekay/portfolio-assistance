@@ -6,17 +6,34 @@ NAME    = os.environ.get("PERSONA_NAME", "Gokul")
 CONTACT = os.environ.get("PERSONA_CONTACT", "via the contact links on this site")
 
 GREETINGS  = {"hi", "hello", "hey", "hii", "helo", "howdy", "sup", "yo"}
-THANKS     = {"thanks", "thank you", "thankyou", "thx", "ty", "great", "cool", "awesome", "ok", "okay"}
+# spoken greetings arrive as sentences — matched by substring on short turns
+GREETING_PHRASES = (
+    "good morning", "good afternoon", "good evening",
+    "how are you", "how's it going", "hows it going",
+    "what's up", "whats up", "nice to meet you",
+)
+# acknowledgments that keep the conversation open (explicit thank-yous end it)
+THANKS     = {"great", "cool", "awesome", "nice", "perfect", "ok", "okay", "got it", "understood"}
 FAREWELLS  = {"bye", "goodbye", "see you", "cya", "exit", "quit", "q"}
 # spoken farewells arrive as full sentences — matched by substring
 FAREWELL_PHRASES = (
     "end the conversation", "end of the conversation", "close the conversation",
     "close it", "that's all", "thats all", "that is all", "nothing else",
-    "we're done", "were done", "i'm done", "im done", "stop the conversation",
+    "that's it", "that is it", "no more questions", "nothing more",
+    "we're done", "were done", "i'm done", "im done", "i am done",
+    "i'm good", "im good", "all good", "stop the conversation",
     "good night", "goodnight", "talk to you later", "catch you later",
     "talk later", "talk it later", "talk to you soon", "we can talk later",
     "wrap up", "wrap it up", "call it a day", "see you later", "see you soon",
+    "have a good day", "have a nice day", "have a great day",
+    "thank you for your time", "thanks for your time",
 )
+# explicit thank-you — in a voice flow this signals the visitor is wrapping up,
+# unless it's followed by another question ("thanks, and what about...")
+THANKS_RE = re.compile(r"\b(thanks|thank\s*you|thankyou|thx|ty)\b", re.I)
+QUESTION_HINT = re.compile(
+    r"\?|\b(what|who|where|when|why|how|which|whose|can|could|would|will|"
+    r"do|does|did|is|are|was|were|tell|explain|share|describe|about)\b", re.I)
 SELF_INTRO = {"who are you", "what are you", "who are you?", "what are you?",
               "tell me about yourself", "introduce yourself", "what can you do",
               "what can you tell me", "what do you do"}
@@ -41,7 +58,10 @@ GREETING_RESPONSE = (
     f"Ask me anything about {NAME} — his skills, projects, experience, or background!"
 )
 THANKS_RESPONSE     = f"Glad I could help! Feel free to ask anything else about {NAME}."
-FAREWELL_RESPONSE   = "Thanks for stopping by! Have a great day."
+FAREWELL_RESPONSE   = (
+    f"It was great talking with you! "
+    f"Come back anytime you'd like to know more about {NAME}. Bye!"
+)
 PERSONAL_RESPONSE   = (
     f"For that, it's best to reach out to {NAME} directly {CONTACT} — "
     "or share your name and email or phone number here, "
@@ -98,12 +118,17 @@ def detect_intent(text: str) -> str:
     # farewell first — its phrases are the most specific signal
     if words & FAREWELLS or any(p in normalized for p in FAREWELL_PHRASES):
         return "farewell"
+    # a spoken thank-you with no follow-up question means the visitor is done
+    if THANKS_RE.search(normalized) and not QUESTION_HINT.search(normalized):
+        return "farewell"
     if normalized in SELF_INTRO:
         return "self_intro"
     if PERSONAL_PATTERN.search(normalized):
         return "personal"
     if short and (normalized in GREETINGS or words & GREETINGS):
         return "greeting"
-    if short and (normalized in THANKS or words & THANKS or "thank you" in normalized):
+    if len(words) <= 5 and any(p in normalized for p in GREETING_PHRASES):
+        return "greeting"
+    if short and (normalized in THANKS or words & THANKS):
         return "thanks"
     return "question"

@@ -16,11 +16,15 @@ const FAREWELL       = "Thank you! Glad to help — feel free to ask anytime."
 const FILLER_WORDS = new Set([
   'okay', 'ok', 'alright', 'all', 'right', 'hmm', 'hm', 'mmm',
   'uh', 'um', 'er', 'ah', 'yeah', 'ya', 'yes', 'no', 'so', 'well',
+  'and', 'the', 'a', 'an', 'of', 'to', 'it', 'is', 'oh', 'huh',
 ])
 
 function isFillerOnly(text) {
   const words = text.toLowerCase().replace(/[^a-z\s']/g, ' ').split(/\s+/).filter(Boolean)
-  return words.length > 0 && words.every(w => FILLER_WORDS.has(w))
+  if (words.length === 0) return true
+  // Whisper hallucinates single letters/short fragments from noise ("S", "and")
+  if (words.length === 1 && words[0].length <= 2) return true
+  return words.every(w => FILLER_WORDS.has(w))
 }
 
 // Per-browser-tab session: sessionStorage lives exactly until the tab closes
@@ -315,6 +319,7 @@ export default function useVoiceAssistant() {
     // a SILENCE_MS pause to finalize.
     const samples = new Uint8Array(analyser.fftSize)
     let noiseFloor = 0.05   // starts high, adapts down to the room quickly
+    let loudStreak = 0      // consecutive loud frames — real speech sustains
     vadTimerRef.current = setInterval(() => {
       analyser.getByteTimeDomainData(samples)
       let sum = 0
@@ -330,10 +335,18 @@ export default function useVoiceAssistant() {
 
       const now = Date.now()
       if (amp > threshold) {
-        heardRef.current   = true
-        spokeAtRef.current = now
-      } else if (heardRef.current && now - spokeAtRef.current > SILENCE_MS) {
-        finalize()
+        loudStreak += 1
+        // one blip (chair creak, breath, playback tail) isn't speech —
+        // require ~300ms sustained before we commit to transcribing
+        if (loudStreak >= 3) {
+          heardRef.current   = true
+          spokeAtRef.current = now
+        }
+      } else {
+        loudStreak = 0
+        if (heardRef.current && now - spokeAtRef.current > SILENCE_MS) {
+          finalize()
+        }
       }
     }, 100)
 

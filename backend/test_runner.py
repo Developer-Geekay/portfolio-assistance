@@ -92,7 +92,9 @@ TESTS = [
     # Intent detection (no model inference)
     ("hello",                           ["AI assistant", "Ask me"],               [],                          "intent"),
     ("who are you?",                    ["AI assistant", "Gokul"],                [],                          "intent"),
-    ("thanks",                          ["Glad", "help"],                         [],                          "intent"),
+    ("thanks",                          ["Bye"],                                  [],                          "intent"),
+    ("thank you so much",               ["Bye"],                                  [],                          "intent"),
+    ("great",                           ["Glad", "help"],                         [],                          "intent"),
 ]
 
 
