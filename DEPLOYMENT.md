@@ -47,9 +47,16 @@ cd /opt/gokul-ai/backend
 mkdir -p models/generator
 # copy your gemma gguf here, e.g. via scp from your workstation:
 #   scp models/generator/gemma-4-e2b-it-qat-q4.gguf pi:/opt/gokul-ai/backend/models/generator/
+# or download directly on the server with wget from the model's
+# HuggingFace page (Files tab → copy the .gguf download link)
 
-# Piper voice — already in git (models/tts/). To change the voice:
-#   https://rhasspy.github.io/piper-samples/
+# Piper voice — already in git (models/tts/). To change or re-download the
+# voice, fetch BOTH files (.onnx and .onnx.json) — Piper fails without the json:
+#   wget -O models/tts/en_US-lessac-medium.onnx \
+#     "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx"
+#   wget -O models/tts/en_US-lessac-medium.onnx.json \
+#     "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json"
+#   Voice catalog: https://rhasspy.github.io/piper-samples/
 
 # Whisper downloads itself on first start (base.en, ~150MB, cached in ~/.cache)
 ```
@@ -208,6 +215,61 @@ sudo systemctl restart gokul-ai              # if backend changed
 
 KB-only edits don't need a restart:
 `curl -X POST -H "X-Admin-Key: <key>" https://your-domain.example/api/retrain`
+
+## Embedding in an existing site
+
+To mount the assistant inside another site (e.g. a portfolio at
+`/assistant`) instead of giving it its own domain:
+
+1. Build the frontend with subpath env vars:
+   ```ini
+   VITE_BASE=/assistant/
+   VITE_API_BASE=/assistant-api
+   ```
+2. Serve `frontend/dist` at that subpath from the host site, and have the
+   host app (or nginx) proxy `/assistant-api/*` → `http://127.0.0.1:16000/`.
+   Whatever does the proxying, keep a generous body size and read timeout
+   on that path — LLM inference takes tens of seconds and voice uploads
+   are megabytes.
+
+## Troubleshooting
+
+**pip tries to download a 223MB CUDA wheel on ARM64** — `faster-whisper`
+depends on `ctranslate2`, whose resolver can pick GPU wheels on ARM64
+Linux; on a small disk the download alone can fail the install. Fix:
+
+```bash
+pip cache purge                          # reclaim space from failed attempts
+pip install --no-cache-dir ctranslate2   # CPU wheel, no cache written
+pip install --no-cache-dir -r requirements.txt
+```
+
+**Disk fills up during pip install** — check where the space went before
+retrying; pip's wheel cache is the usual culprit on small /home partitions:
+
+```bash
+df -h ~
+du -sh ~/.cache/pip
+pip cache purge          # or use --no-cache-dir on every install
+```
+
+**systemd service exits immediately** — the two classic mistakes:
+`ExecStart` must include the script (`.../python main.py`, not just
+`.../python`), and `WorkingDirectory` must be the backend dir —
+`main.py` loads `.env`, the KB, and models by relative path. Debug with
+`journalctl -u gokul-ai -n 50`.
+
+**Backend health checks** (works locally on the server, before nginx):
+
+```bash
+curl -s localhost:16000/facts?n=1                 # KB loaded?
+curl -s localhost:16000/openapi.json | python3 -m json.tool | grep '"/'   # routes
+curl -s -X POST localhost:16000/ask -H 'Content-Type: application/json' \
+  -d '{"text":"hello"}'                           # full intent path
+```
+
+**Piper voice fails to load** — both `.onnx` and `.onnx.json` must exist
+side by side; a wget of only the `.onnx` is the common cause.
 
 ## Memory notes (Pi 5, 8GB)
 
