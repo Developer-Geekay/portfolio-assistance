@@ -57,6 +57,18 @@ def load_model():
     global llm, _system_prompt
     _system_prompt = _build_system_prompt()
     print("Loading model...")
+    if N_GPU_LAYERS != 0:
+        try:
+            import llama_cpp
+            supported = llama_cpp.llama_supports_gpu_offload()
+        except Exception:
+            supported = None
+        if supported is False:
+            print("WARNING: LLM_GPU_LAYERS is set but this llama-cpp-python build "
+                  "has no GPU backend — inference will run on CPU. "
+                  "Re-run the setup script to install the CUDA/Metal wheel.")
+        elif supported:
+            print(f"LLM GPU offload active ({N_GPU_LAYERS} layers).")
     llm = Llama(
         model_path=MODEL_PATH,
         n_ctx=4096,

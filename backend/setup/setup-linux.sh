@@ -42,18 +42,24 @@ else
     echo "No NVIDIA GPU detected — using CPU."
 fi
 
-# llama-cpp-python: prebuilt wheel for the detected backend, CPU as fallback
+# llama-cpp-python: prebuilt wheel for the detected backend, CPU as fallback.
+# The CUDA index must be the ONLY index for this install — PyPI carries newer
+# source-only releases that would otherwise win and build a CPU-only binary.
 if [ "$COMPUTE" = cuda ]; then
-    "$PIP" install llama-cpp-python \
-        --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124 || {
-        echo "CUDA wheel unavailable — falling back to CPU build."
-        COMPUTE=cpu
-    }
+    if ! "$PY" -c 'import llama_cpp, sys; sys.exit(0 if llama_cpp.llama_supports_gpu_offload() else 1)' 2>/dev/null; then
+        "$PIP" install --force-reinstall --no-deps --only-binary=:all: llama-cpp-python \
+            --index-url https://abetlen.github.io/llama-cpp-python/whl/cu124 || {
+            echo "CUDA wheel unavailable — falling back to CPU build."
+            COMPUTE=cpu
+        }
+    fi
 fi
 if [ "$COMPUTE" = cpu ]; then
-    "$PIP" install llama-cpp-python \
-        --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu \
-        || "$PIP" install llama-cpp-python
+    if ! "$PY" -c 'import llama_cpp' 2>/dev/null; then
+        "$PIP" install llama-cpp-python \
+            --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu \
+            || "$PIP" install llama-cpp-python
+    fi
 fi
 
 # --- 4. Remaining dependencies -----------------------------------------------

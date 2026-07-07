@@ -50,17 +50,34 @@ if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
 }
 if ($Compute -eq "cpu") { Write-Host "No NVIDIA GPU detected - using CPU." }
 
-# llama-cpp-python: prebuilt wheel for the detected backend, CPU as fallback
+# llama-cpp-python: prebuilt wheel for the detected backend, CPU as fallback.
+# The CUDA index must be the ONLY index for this install — PyPI carries newer
+# source-only releases that would otherwise win and build a CPU-only binary.
+function Invoke-QuietPython([string[]]$PyArgs) {
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $VenvPy @PyArgs 2>&1 | Out-Null
+    $ok = ($LASTEXITCODE -eq 0)
+    $ErrorActionPreference = $prev
+    return $ok
+}
 if ($Compute -eq "cuda") {
-    & $VenvPy -m pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "CUDA wheel unavailable - falling back to CPU build."
-        $Compute = "cpu"
+    $hasCuda = Invoke-QuietPython @("-c", "import llama_cpp, sys; sys.exit(0 if llama_cpp.llama_supports_gpu_offload() else 1)")
+    if (-not $hasCuda) {
+        & $VenvPy -m pip install --force-reinstall --no-deps --only-binary=:all: llama-cpp-python `
+            --index-url https://abetlen.github.io/llama-cpp-python/whl/cu124
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "CUDA wheel unavailable - falling back to CPU build."
+            $Compute = "cpu"
+        }
     }
 }
 if ($Compute -eq "cpu") {
-    & $VenvPy -m pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
-    if ($LASTEXITCODE -ne 0) { & $VenvPy -m pip install llama-cpp-python }
+    $hasLlama = Invoke-QuietPython @("-c", "import llama_cpp")
+    if (-not $hasLlama) {
+        & $VenvPy -m pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+        if ($LASTEXITCODE -ne 0) { & $VenvPy -m pip install llama-cpp-python }
+    }
 }
 
 # --- 4. Remaining dependencies ---------------------------------------------------
