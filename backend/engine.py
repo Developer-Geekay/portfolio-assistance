@@ -7,6 +7,9 @@ from llama_cpp import Llama
 MODEL_PATH = os.environ.get("LLM_MODEL", "models/generator/gemma-4-e2b-it-qat-q4.gguf")
 KB_PATH    = os.environ.get("KB_PATH", "knowledge_base.json")
 N_THREADS  = int(os.environ.get("LLM_THREADS", "4"))
+# 0 = CPU only, -1 = offload all layers to GPU (CUDA/Metal), N = partial offload.
+# Safe on CPU-only installs: llama.cpp ignores it when no GPU backend is built in.
+N_GPU_LAYERS = int(os.environ.get("LLM_GPU_LAYERS", "0"))
 
 # The person this assistant represents — set in .env for your own build
 FULL_NAME  = os.environ.get("PERSONA_FULL_NAME", "Gokula Kannan")
@@ -58,7 +61,7 @@ def load_model():
         model_path=MODEL_PATH,
         n_ctx=4096,
         n_threads=N_THREADS,
-        n_gpu_layers=0,
+        n_gpu_layers=N_GPU_LAYERS,
         verbose=False,
         chat_format="gemma",
     )

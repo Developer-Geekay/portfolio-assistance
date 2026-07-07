@@ -13,6 +13,11 @@ __pycache__/
 backend/unknown_queries.db
 unknown_queries.db
 
+# service runtime + bundle output
+backend/build/*.log
+backend/build/*.pid
+backend/build/dist/
+
 # personal knowledge base stays on this machine — only the sample is tracked
 backend/knowledge_base.json
 backend/index/

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- launchd agent for the portfolio assistant backend (macOS, login-time service).
+     Install:
+       1. Replace /path/to/backend below with the real backend folder.
+       2. cp build/com.portfolio-assistant.plist ~/Library/LaunchAgents/
+       3. launchctl load ~/Library/LaunchAgents/com.portfolio-assistant.plist
+     Manage:
+       launchctl start|stop com.portfolio-assistant
+       launchctl unload ~/Library/LaunchAgents/com.portfolio-assistant.plist  (remove)
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.portfolio-assistant</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/path/to/backend/.venv/bin/python</string>
+        <string>main.py</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/path/to/backend</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/path/to/backend/build/assistant.log</string>
+    <key>StandardErrorPath</key>
+    <string>/path/to/backend/build/assistant.err.log</string>
+</dict>
+</plist>

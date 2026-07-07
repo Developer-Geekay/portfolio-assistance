@@ -24,6 +24,11 @@ from intent import (detect_intent, extract_contact, GREETING_RESPONSE,
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base.en")
 PIPER_VOICE   = os.environ.get("PIPER_VOICE", "models/tts/en_US-lessac-medium.onnx")
 
+# STT compute target — "cuda" needs cuBLAS/cuDNN; anything that fails to load
+# falls back to CPU int8 so the server always comes up.
+WHISPER_DEVICE  = os.environ.get("WHISPER_DEVICE", "cpu")
+WHISPER_COMPUTE = os.environ.get("WHISPER_COMPUTE", "int8")
+
 # Domain vocabulary seeds Whisper so proper nouns transcribe correctly —
 # list your name, companies, and tech terms in .env (comma-separated)
 WHISPER_PROMPT = os.environ.get(
@@ -41,7 +46,13 @@ async def lifespan(app: FastAPI):
     engine.load_model()
     print("Loading Whisper...")
     from faster_whisper import WhisperModel
-    stt_model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
+    try:
+        stt_model = WhisperModel(WHISPER_MODEL, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE)
+    except Exception as e:
+        if WHISPER_DEVICE == "cpu":
+            raise
+        print(f"Whisper failed on {WHISPER_DEVICE} ({e}); falling back to CPU.")
+        stt_model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
     print("Loading Piper voice...")
     from piper import PiperVoice
     tts_voice = PiperVoice.load(PIPER_VOICE)

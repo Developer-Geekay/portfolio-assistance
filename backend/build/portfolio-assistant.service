@@ -1,0 +1,26 @@
+# systemd unit for the portfolio assistant backend (Linux, boot-time service).
+# Install:
+#   1. Adjust the two paths and the User below to your install location.
+#   2. sudo cp build/portfolio-assistant.service /etc/systemd/system/
+#   3. sudo systemctl daemon-reload
+#   4. sudo systemctl enable --now portfolio-assistant
+# Manage: sudo systemctl start|stop|restart|status portfolio-assistant
+# Logs:   journalctl -u portfolio-assistant -f
+
+[Unit]
+Description=Portfolio assistant backend (voice pipeline API)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Path to the backend folder (where main.py and .venv live)
+WorkingDirectory=/opt/portfolio-assistant/backend
+ExecStart=/opt/portfolio-assistant/backend/.venv/bin/python main.py
+Restart=on-failure
+RestartSec=5
+# Run as a non-root user that owns the backend folder
+User=assistant
+
+[Install]
+WantedBy=multi-user.target
