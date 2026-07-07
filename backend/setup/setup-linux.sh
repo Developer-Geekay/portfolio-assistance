@@ -65,8 +65,9 @@ fi
 # --- 4. Remaining dependencies -----------------------------------------------
 "$PIP" install -r requirements.txt
 if [ "$COMPUTE" = cuda ]; then
-    # CUDA runtime libs for faster-whisper (ctranslate2); harmless if unused
-    "$PIP" install nvidia-cublas-cu12 nvidia-cudnn-cu12 || true
+    # CUDA runtime libs for llama.cpp and faster-whisper (ctranslate2):
+    # cudart for llama.cpp, cublas for both, cudnn for ctranslate2
+    "$PIP" install nvidia-cuda-runtime-cu12 nvidia-cublas-cu12 nvidia-cudnn-cu12 || true
 fi
 
 # --- 5. .env -----------------------------------------------------------------

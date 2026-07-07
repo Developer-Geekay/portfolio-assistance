@@ -2,6 +2,9 @@
 import json
 import os
 import re
+
+from gpu_dlls import register_cuda_dlls
+register_cuda_dlls()   # before llama_cpp import — llama.dll resolves CUDA DLLs at load
 from llama_cpp import Llama
 
 MODEL_PATH = os.environ.get("LLM_MODEL", "models/generator/gemma-4-e2b-it-qat-q4.gguf")

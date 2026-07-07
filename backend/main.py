@@ -29,21 +29,6 @@ PIPER_VOICE   = os.environ.get("PIPER_VOICE", "models/tts/en_US-lessac-medium.on
 WHISPER_DEVICE  = os.environ.get("WHISPER_DEVICE", "cpu")
 WHISPER_COMPUTE = os.environ.get("WHISPER_COMPUTE", "int8")
 
-
-def _add_cuda_dll_dirs():
-    # pip-installed CUDA libs (nvidia-cublas-cu12 / nvidia-cudnn-cu12) sit in
-    # site-packages/nvidia/*/bin, which is not on the Windows DLL search path —
-    # register those dirs so ctranslate2 can load cublas64_12.dll etc.
-    import glob
-    import site
-    import sys
-    if sys.platform != "win32":
-        return
-    for base in site.getsitepackages():
-        for bin_dir in glob.glob(os.path.join(base, "nvidia", "*", "bin")):
-            os.add_dll_directory(bin_dir)
-            os.environ["PATH"] = bin_dir + os.pathsep + os.environ["PATH"]
-
 # Domain vocabulary seeds Whisper so proper nouns transcribe correctly —
 # list your name, companies, and tech terms in .env (comma-separated)
 WHISPER_PROMPT = os.environ.get(
@@ -60,10 +45,10 @@ async def lifespan(app: FastAPI):
     global stt_model, tts_voice
     engine.load_model()
     print("Loading Whisper...")
+    # CUDA DLL dirs are registered at engine import (gpu_dlls.py), which also
+    # covers ctranslate2 here
     from faster_whisper import WhisperModel
     try:
-        if WHISPER_DEVICE != "cpu":
-            _add_cuda_dll_dirs()
         stt_model = WhisperModel(WHISPER_MODEL, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE)
         if WHISPER_DEVICE != "cpu":
             # CUDA libs load lazily at the first encode — transcribe a second

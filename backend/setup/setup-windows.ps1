@@ -83,8 +83,9 @@ if ($Compute -eq "cpu") {
 # --- 4. Remaining dependencies ---------------------------------------------------
 & $VenvPy -m pip install -r requirements.txt
 if ($Compute -eq "cuda") {
-    # CUDA runtime libs for faster-whisper (ctranslate2); harmless if unused
-    & $VenvPy -m pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
+    # CUDA runtime libs for llama.cpp and faster-whisper (ctranslate2):
+    # cudart for llama.dll, cublas for both, cudnn for ctranslate2
+    & $VenvPy -m pip install nvidia-cuda-runtime-cu12 nvidia-cublas-cu12 nvidia-cudnn-cu12
 }
 
 # --- 5. .env ---------------------------------------------------------------------
