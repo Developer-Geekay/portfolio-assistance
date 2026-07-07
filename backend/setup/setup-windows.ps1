@@ -76,13 +76,15 @@ if (-not (Test-Path ".env")) {
     Write-Host "Created .env from .env.example - edit persona/admin values."
 }
 function Set-EnvValue([string]$Key, [string]$Value) {
-    $lines = Get-Content ".env"
+    # Rewrite as a line array so appends never glue onto a final line
+    # that lacks a trailing newline
+    $lines = @(Get-Content ".env")
     if ($lines -match "^$Key=") {
         $lines = $lines -replace "^$Key=.*", "$Key=$Value"
-        Set-Content ".env" $lines
     } else {
-        Add-Content ".env" "$Key=$Value"
+        $lines += "$Key=$Value"
     }
+    Set-Content ".env" $lines
 }
 if ($Compute -eq "cuda") {
     Set-EnvValue "LLM_GPU_LAYERS" "-1"

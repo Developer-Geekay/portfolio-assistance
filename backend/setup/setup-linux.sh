@@ -69,6 +69,8 @@ set_env() {
     if grep -q "^$1=" .env; then
         sed -i "s|^$1=.*|$1=$2|" .env
     else
+        # guard against a final line with no trailing newline before appending
+        [ -n "$(tail -c1 .env)" ] && echo >> .env
         printf '%s=%s\n' "$1" "$2" >> .env
     fi
 }
