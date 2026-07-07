@@ -105,10 +105,10 @@ if [ ! -f models/embedder/config.json ]; then
 fi
 
 echo "Caching Whisper model..."
-"$PY" - <<'EOF'
-import os
+"$PY" - "$BACKEND_DIR" <<'EOF'
+import sys, os
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(os.path.join(sys.argv[1], ".env"))
 from faster_whisper import WhisperModel
 WhisperModel(os.environ.get("WHISPER_MODEL", "base.en"), device="cpu", compute_type="int8")
 print("Whisper model cached.")
