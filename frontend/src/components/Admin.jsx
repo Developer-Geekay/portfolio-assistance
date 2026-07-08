@@ -239,6 +239,7 @@ function Settings({ adminKey }) {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [downloads, setDownloads] = useState({})
+  const [activePolls, setActivePolls] = useState(new Set())
 
   const loadSettings = useCallback(async () => {
     try {
@@ -259,35 +260,65 @@ function Settings({ adminKey }) {
 
   useEffect(() => {
     const intervals = {}
+
+    const checkAndStartPoll = async (v) => {
+      // Check if it is currently downloading on the server
+      try {
+        const res = await fetch(`${API_BASE}/voices/download-progress?voice=${v.id}`)
+        const data = await res.json()
+        if (data.downloading || activePolls.has(v.id)) {
+          startPolling(v.id)
+        }
+      } catch (e) {
+        console.error(e)
+      }
+    }
+
+    const startPolling = (voiceId) => {
+      if (intervals[voiceId]) return
+      const check = async () => {
+        try {
+          const res = await fetch(`${API_BASE}/voices/download-progress?voice=${voiceId}`)
+          const data = await res.json()
+          if (data.downloading) {
+            setDownloads(prev => ({ ...prev, [voiceId]: data.progress }))
+          } else if (data.downloaded) {
+            setDownloads(prev => {
+              const next = { ...prev }
+              delete next[voiceId]
+              return next
+            })
+            setActivePolls(prev => {
+              const next = new Set(prev)
+              next.delete(voiceId)
+              return next
+            })
+            loadSettings()
+            clearInterval(intervals[voiceId])
+            delete intervals[voiceId]
+          } else {
+            // Stopped / failed
+            clearInterval(intervals[voiceId])
+            delete intervals[voiceId]
+          }
+        } catch (e) {
+          console.error(e)
+        }
+      }
+      check()
+      intervals[voiceId] = setInterval(check, 2000)
+    }
+
     voices.forEach(v => {
       if (!v.downloaded) {
-        const check = async () => {
-          try {
-            const res = await fetch(`${API_BASE}/voices/download-progress?voice=${v.id}`)
-            const data = await res.json()
-            if (data.downloading) {
-              setDownloads(prev => ({ ...prev, [v.id]: data.progress }))
-            } else if (data.downloaded) {
-              setDownloads(prev => {
-                const next = { ...prev }
-                delete next[v.id]
-                return next
-              })
-              loadSettings()
-              clearInterval(intervals[v.id])
-            }
-          } catch (e) {
-            console.error(e)
-          }
-        }
-        check()
-        intervals[v.id] = setInterval(check, 2000)
+        checkAndStartPoll(v)
       }
     })
+
     return () => {
       Object.values(intervals).forEach(clearInterval)
     }
-  }, [voices, loadSettings])
+  }, [voices, loadSettings, activePolls])
 
   const save = async () => {
     setLoading(true)
@@ -322,6 +353,11 @@ function Settings({ adminKey }) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ voice: voiceId })
+      })
+      setActivePolls(prev => {
+        const next = new Set(prev)
+        next.add(voiceId)
+        return next
       })
       setVoices(prev => prev.map(v => v.id === voiceId ? { ...v, downloaded: false } : v))
     } catch (e) {
