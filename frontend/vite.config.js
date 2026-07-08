@@ -8,7 +8,7 @@ import basicSsl from '@vitejs/plugin-basic-ssl'
 // on every response. Mirror them in nginx for production.
 const wasmHeaders = {
   'Cross-Origin-Embedder-Policy': 'require-corp',
-  'Cross-Origin-Opener-Policy':   'same-origin',
+  'Cross-Origin-Opener-Policy': 'same-origin',
 }
 
 const PIPER_DIST = 'node_modules/piper-tts-web/dist'
@@ -40,8 +40,8 @@ function piperDevServer() {
     apply: 'serve',
     configureServer(server) {
       const routes = {
-        '/onnx/':   path.join(PIPER_DIST, 'onnx'),
-        '/piper/':  path.join(PIPER_DIST, 'piper'),
+        '/onnx/': path.join(PIPER_DIST, 'onnx'),
+        '/piper/': path.join(PIPER_DIST, 'piper'),
         '/worker/': path.join(PIPER_DIST, 'worker'),
       }
       server.middlewares.use((req, res, next) => {
@@ -61,10 +61,14 @@ function piperDevServer() {
           if (fs.existsSync(full)) {
             const ext = path.extname(file)
             const mime = ext === '.wasm' ? 'application/wasm'
-                       : ext === '.js'   ? 'application/javascript'
-                       : ext === '.data' ? 'application/octet-stream'
-                       : 'text/plain'
+              : ext === '.js' ? 'application/javascript'
+                : ext === '.data' ? 'application/octet-stream'
+                  : 'text/plain'
             res.setHeader('Content-Type', mime)
+            res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp')
+            res.setHeader('Cross-Origin-Opener-Policy', 'same-origin')
+            res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
+            res.setHeader('Access-Control-Allow-Origin', '*')
             res.end(fs.readFileSync(full))
             return
           }
