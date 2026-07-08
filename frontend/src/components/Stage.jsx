@@ -45,6 +45,27 @@ export default function Stage() {
 
   const { state, stateRef, transcript, toggle, analyserRef, modelReady, modelProgress, piperReady } = useVoiceAssistant()
 
+  // ── subtitle chunking: split transcript into 2-line windows ───────────
+  // Each time the transcript grows, we check if the visible lines overflow
+  // and slide the window forward, giving a smooth subtitle-like reveal.
+  const WORDS_PER_CHUNK = 10 // roughly 2 lines at ~5-6 words per line
+  const [subtitle, setSubtitle] = useState({ lines: [], key: 0 })
+  const subtitleBufRef = useRef([])
+  useEffect(() => {
+    if (state === 'idle') {
+      subtitleBufRef.current = []
+      setSubtitle({ lines: [], key: 0 })
+      return
+    }
+    if (!transcript) return
+    const words = transcript.trim().split(/\s+/).filter(Boolean)
+    subtitleBufRef.current = words
+    // Always show the last WORDS_PER_CHUNK words, creating a sliding window
+    const start = Math.max(0, words.length - WORDS_PER_CHUNK)
+    const chunk = words.slice(start).join(' ')
+    setSubtitle(prev => ({ lines: [chunk], key: prev.lines[0] === chunk ? prev.key : prev.key + 1 }))
+  }, [transcript, state])
+
   // toggle lives in a ref so the canvas click handler always sees the latest
   const toggleRef = useRef(toggle)
   useEffect(() => { toggleRef.current = toggle }, [toggle])
@@ -406,7 +427,9 @@ export default function Stage() {
         <p className="tagline" key={tagline.key}>{tagline.text}</p>
       )}
       {state !== 'idle' && (
-        <p className="transcript">{transcript || (state === 'listening' ? '· · ·' : '')}</p>
+        <p className="transcript" key={subtitle.key}>
+          {subtitle.lines[0] || (state === 'listening' ? '· · ·' : '')}
+        </p>
       )}
 
       <div className={`loader${loaderDone ? ' done' : ''}`}>

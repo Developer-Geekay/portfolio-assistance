@@ -14,6 +14,11 @@ export function isPiperReady() { return _ready }
 // Wraps fetch() with Cache API so the 63 MB ONNX model is stored locally
 // after the first download. Subsequent visits (and generate() calls) hit
 // the cache instead of HuggingFace CDN.
+//
+// Dev COEP fix: In development, the server sets Cross-Origin-Embedder-Policy:
+// require-corp. HuggingFace CDN doesn't send Cross-Origin-Resource-Policy so
+// direct cross-origin fetches from WASM workers are silently blocked by the
+// browser. We proxy through /hf-proxy (same-origin) in dev to avoid this.
 class CachingFetchProvider {
   static CACHE = 'piper-voices-v1'
 
@@ -23,15 +28,22 @@ class CachingFetchProvider {
     let cache
     try { cache = await caches.open(CachingFetchProvider.CACHE) } catch {}
 
+    // Check cache by original URL first
     if (cache) {
       const hit = await cache.match(url)
       if (hit) return url.endsWith('.json') ? hit.json() : hit.arrayBuffer()
     }
 
-    const response = await window.fetch(url)
+    // In dev mode proxy HuggingFace through the Vite server (same-origin) so
+    // COEP doesn't block the cross-origin fetch from the WASM worker.
+    const fetchUrl = import.meta.env.DEV && url.includes('huggingface.co')
+      ? url.replace('https://huggingface.co', '/hf-proxy')
+      : url
+
+    const response = await window.fetch(fetchUrl)
     if (!response.ok) throw new Error(`${response.status} fetching ${url}`)
 
-    // Store a clone so we can still consume the original body below
+    // Store under original URL so the cache key is stable across dev/prod
     if (cache) cache.put(url, response.clone()).catch(() => {})
 
     return url.endsWith('.json') ? response.json() : response.arrayBuffer()

@@ -34,6 +34,8 @@ function piperBuildCopy() {
 
 // viteStaticCopy only runs at build time. This plugin serves the same Piper
 // WASM assets from node_modules during vite dev with the correct MIME types.
+// It also acts as a same-origin proxy for HuggingFace voice model files so
+// the browser never receives a cross-origin redirect that COEP would block.
 function piperDevServer() {
   return {
     name: 'piper-dev-server',
@@ -44,6 +46,7 @@ function piperDevServer() {
         '/piper/':  path.join(PIPER_DIST, 'piper'),
         '/worker/': path.join(PIPER_DIST, 'worker'),
       }
+      // Serve local WASM/data files with correct MIME + isolation headers
       server.middlewares.use((req, res, next) => {
         for (const [prefix, dir] of Object.entries(routes)) {
           if (!req.url?.startsWith(prefix)) continue
@@ -63,13 +66,50 @@ function piperDevServer() {
             const mime = ext === '.wasm' ? 'application/wasm'
                        : ext === '.js'   ? 'application/javascript'
                        : ext === '.data' ? 'application/octet-stream'
+                       : ext === '.json' ? 'application/json'
                        : 'text/plain'
+            const content = fs.readFileSync(full)
+            // Mirror the WASM isolation headers so workers that load these
+            // assets also operate in a crossOriginIsolated context.
+            res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp')
+            res.setHeader('Cross-Origin-Opener-Policy', 'same-origin')
             res.setHeader('Content-Type', mime)
-            res.end(fs.readFileSync(full))
+            res.setHeader('Content-Length', content.length)
+            res.end(content)
             return
           }
         }
         next()
+      })
+
+      // HuggingFace proxy: fetch voice model files server-side in Node.js,
+      // following all CDN redirects, so the browser only sees same-origin
+      // responses and COEP never blocks the download.
+      server.middlewares.use(async (req, res, next) => {
+        if (!req.url?.startsWith('/hf-proxy')) return next()
+        const hfPath = req.url.slice('/hf-proxy'.length) || '/'
+        const hfUrl  = `https://huggingface.co${hfPath}`
+        try {
+          // Node.js 18+ fetch follows redirects by default (redirect:'follow')
+          const upstream = await fetch(hfUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 Vite-HF-Dev-Proxy/1.0' },
+          })
+          if (!upstream.ok) {
+            res.statusCode = upstream.status
+            res.end(`HuggingFace upstream error: ${upstream.status}`)
+            return
+          }
+          const ct = upstream.headers.get('content-type') || 'application/octet-stream'
+          const buf = Buffer.from(await upstream.arrayBuffer())
+          res.setHeader('Content-Type', ct)
+          res.setHeader('Content-Length', buf.length)
+          res.setHeader('Access-Control-Allow-Origin', '*')
+          res.end(buf)
+        } catch (err) {
+          console.error('[hf-proxy] error fetching', hfUrl, err.message)
+          res.statusCode = 502
+          res.end('HuggingFace proxy error: ' + err.message)
+        }
       })
     },
   }
