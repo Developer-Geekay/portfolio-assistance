@@ -180,13 +180,26 @@ export default function Stage() {
     let animId
     let assembled = 0
 
+    // Read actual visible viewport dimensions.
+    // visualViewport is the most reliable source on mobile Chrome/Safari —
+    // it excludes the browser toolbar whereas 100dvh and getBoundingClientRect
+    // can disagree on Chrome iOS, causing the canvas to render at a different
+    // aspect ratio than its CSS display size (making circles look like ovals).
+    function vp() {
+      const vv = window.visualViewport
+      return vv
+        ? { w: Math.round(vv.width), h: Math.round(vv.height) }
+        : { w: window.innerWidth,    h: window.innerHeight }
+    }
+
+    const { w: initW, h: initH } = vp()
     const ring = []
     for (let i = 0; i < N; i++) {
       const a = (i / N) * Math.PI * 2
       ring.push({
         a,
-        x: Math.random() * window.innerWidth,
-        y: Math.random() * window.innerHeight,
+        x: Math.random() * initW,
+        y: Math.random() * initH,
         tx: 0, ty: 0,
         seed: Math.random() * 1000,
         r: Math.random() * 0.9 + 0.5,
@@ -195,12 +208,15 @@ export default function Stage() {
     }
 
     function resize() {
-      const rect = stage.getBoundingClientRect()
-      const dpr  = window.devicePixelRatio || 1
-      W = rect.width
-      H = rect.height
+      const { w, h } = vp()
+      const dpr = window.devicePixelRatio || 1
+      W = w; H = h
       canvas.width  = Math.round(W * dpr)
       canvas.height = Math.round(H * dpr)
+      // Pin canvas CSS size explicitly so it always matches the draw buffer,
+      // preventing distortion when dvh and the actual layout height disagree.
+      canvas.style.width  = W + 'px'
+      canvas.style.height = H + 'px'
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       cx = W / 2; cy = H / 2
       const isMobile = W < 600
@@ -223,6 +239,7 @@ export default function Stage() {
       }))
     }
     window.addEventListener('resize', resize)
+    window.visualViewport?.addEventListener('resize', resize)
     resize()
 
     function wob(a, t, seed) {
@@ -429,6 +446,7 @@ export default function Stage() {
     return () => {
       cancelAnimationFrame(animId)
       window.removeEventListener('resize', resize)
+      window.visualViewport?.removeEventListener('resize', resize)
       window.removeEventListener('mousemove', onMouseMove)
       window.removeEventListener('touchmove', onTouchMove)
       canvas.removeEventListener('click', onClick)
