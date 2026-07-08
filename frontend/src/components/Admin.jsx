@@ -53,57 +53,80 @@ export default function Admin() {
     setLoading(false)
   }, [])
 
+  const logout = useCallback(() => {
+    setKey('')
+    setData(null)
+    setError('')
+    localStorage.removeItem('assistant_admin_key')
+  }, [])
+
   // auto-load with a previously saved key
   useEffect(() => { if (key) load(key) }, [])   // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── login screen ──────────────────────────────────────────────────────────
+  if (!data) {
+    return (
+      <div className="admin admin-lock">
+        <div className="admin-login-box">
+          <div className="login-brand">AI Admin</div>
+          <p className="admin-sub">Enter your admin key to unlock analytics &amp; leads</p>
+          <div className="admin-keybar">
+            <input
+              type="password"
+              placeholder="Admin key"
+              value={key}
+              autoComplete="off"
+              onChange={(e) => setKey(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') load(key) }}
+            />
+            <button className="primary" onClick={() => load(key)} disabled={loading}>
+              {loading ? 'Loading…' : 'Unlock'}
+            </button>
+          </div>
+          {error && <p className="admin-err">{error}</p>}
+        </div>
+      </div>
+    )
+  }
+
+  // ── dashboard ──────────────────────────────────────────────────────────────
   return (
     <div className="admin">
-      <h1>Assistant Admin</h1>
-      <p className="admin-sub">Leads &amp; analytics — data loads only with a valid admin key</p>
+      <aside className="admin-sidebar">
+        <div className="sidebar-brand">AI Admin</div>
+        <nav className="sidebar-nav">
+          {TABS.map(t => (
+            <button
+              key={t.id}
+              className={`sidebar-link${tab === t.id ? ' active' : ''}`}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-footer">
+          <button className="sidebar-logout" onClick={logout}>Logout</button>
+        </div>
+      </aside>
 
-      <div className="admin-keybar">
-        <input
-          type="password"
-          placeholder="Admin key"
-          value={key}
-          autoComplete="off"
-          onChange={(e) => setKey(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') load(key) }}
-        />
-        <button className="primary" onClick={() => load(key)} disabled={loading}>
-          {loading ? 'Loading…' : data ? 'Refresh' : 'Load'}
-        </button>
+      <div className="admin-body">
+        <div className="admin-cards">
+          <StatCard num={data.stats.sessions} label="Sessions" />
+          <StatCard num={data.stats.turns}    label="Turns" />
+          <StatCard num={data.stats.leads}    label="Leads" tone="good" />
+          <StatCard num={data.stats.unknown}  label="Unanswered" tone="warn" />
+        </div>
+
+        <div className="admin-panel">
+          {tab === 'leads'         && <Leads rows={data.leads} />}
+          {tab === 'sessions'      && <Sessions rows={data.sessions} />}
+          {tab === 'conversations' && <Conversations rows={data.conversations} />}
+          {tab === 'unknown'       && <Unknown rows={data.unknown} />}
+          {tab === 'activity'      && <Activity stats={data.stats} />}
+          {tab === 'settings'      && <Settings adminKey={key} />}
+        </div>
       </div>
-
-      {error && <p className="admin-err">{error}</p>}
-
-      {data && (
-        <>
-          <div className="admin-cards">
-            <StatCard num={data.stats.sessions} label="Sessions" />
-            <StatCard num={data.stats.turns}    label="Conversation turns" />
-            <StatCard num={data.stats.leads}    label="Leads captured" tone="good" />
-            <StatCard num={data.stats.unknown}  label="Unanswered questions" tone="warn" />
-          </div>
-
-          <div className="admin-tabs">
-            {TABS.map(t => (
-              <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="admin-panel">
-            {tab === 'leads'         && <Leads rows={data.leads} />}
-            {tab === 'sessions'      && <Sessions rows={data.sessions} />}
-            {tab === 'conversations' && <Conversations rows={data.conversations} />}
-            {tab === 'unknown'       && <Unknown rows={data.unknown} />}
-            {tab === 'activity'      && <Activity stats={data.stats} />}
-            {tab === 'settings'      && <Settings adminKey={key} />}
-          </div>
-        </>
-      )}
     </div>
   )
 }
@@ -125,15 +148,15 @@ function Leads({ rows }) {
   if (!rows.length) return <Empty>No leads yet — visitors who share an email or phone number appear here.</Empty>
   return (
     <table>
-      <thead><tr><th>When</th><th>Email</th><th>Phone</th><th>Message</th><th>IP</th></tr></thead>
+      <thead><tr><th>When</th><th>Email</th><th>Phone</th><th>Message</th><th className="hide-sm">IP</th></tr></thead>
       <tbody>
         {rows.map((l, i) => (
           <tr key={i}>
             <td className="mono">{when(l.at)}</td>
             <td>{l.email ? <a className="lead-mail" href={`mailto:${l.email}`}>{l.email}</a> : '–'}</td>
-            <td>{l.phone || '–'}</td>
-            <td className="a">{l.message}</td>
-            <td className="mono">{l.ip}</td>
+            <td className="nowrap">{l.phone || '–'}</td>
+            <td className="a clamp">{l.message}</td>
+            <td className="mono hide-sm">{l.ip}</td>
           </tr>
         ))}
       </tbody>
@@ -145,16 +168,16 @@ function Sessions({ rows }) {
   if (!rows.length) return <Empty>No sessions recorded yet.</Empty>
   return (
     <table>
-      <thead><tr><th>Last activity</th><th>Session</th><th>Device</th><th>Turns</th><th>Started</th><th>IP</th></tr></thead>
+      <thead><tr><th>Last activity</th><th className="hide-sm">Session</th><th>Device</th><th>Turns</th><th className="hide-sm">Started</th><th className="hide-sm">IP</th></tr></thead>
       <tbody>
         {rows.map((s, i) => (
           <tr key={i}>
             <td className="mono">{when(s.last)}</td>
-            <td className="mono">{s.session.slice(0, 8)}</td>
+            <td className="mono hide-sm">{s.session.slice(0, 8)}</td>
             <td>{s.device || 'Unknown'}</td>
             <td>{s.turns}</td>
-            <td className="mono">{when(s.started)}</td>
-            <td className="mono">{s.ip}</td>
+            <td className="mono hide-sm">{when(s.started)}</td>
+            <td className="mono hide-sm">{s.ip}</td>
           </tr>
         ))}
       </tbody>
@@ -166,15 +189,15 @@ function Conversations({ rows }) {
   if (!rows.length) return <Empty>No conversations yet.</Empty>
   return (
     <table>
-      <thead><tr><th>When</th><th>Intent</th><th>Question</th><th>Answer</th><th>Session</th></tr></thead>
+      <thead><tr><th className="hide-sm">When</th><th>Intent</th><th>Question</th><th className="hide-sm">Answer</th><th className="hide-sm">Session</th></tr></thead>
       <tbody>
         {rows.map((c, i) => (
           <tr key={i}>
-            <td className="mono">{when(c.at)}</td>
+            <td className="mono hide-sm">{when(c.at)}</td>
             <td><span className={`pill ${c.intent}`}>{c.intent}</span></td>
-            <td className="q">{c.question}</td>
-            <td className="a">{c.answer}</td>
-            <td className="mono">{c.session.slice(0, 8)}</td>
+            <td className="q clamp">{c.question}</td>
+            <td className="a clamp hide-sm">{c.answer}</td>
+            <td className="mono hide-sm">{c.session.slice(0, 8)}</td>
           </tr>
         ))}
       </tbody>
@@ -211,7 +234,7 @@ function Activity({ stats }) {
             <tr key={i}>
               <td className="mono">{d.day}</td>
               <td><span className="bar" style={{ width: Math.round(d.turns / dayMax * 160) }} />{d.turns} turns</td>
-              <td>{d.sessions} sessions</td>
+              <td className="hide-sm">{d.sessions} sessions</td>
             </tr>
           ))}
         </tbody>
@@ -240,6 +263,8 @@ function Settings({ adminKey }) {
   const [message, setMessage] = useState('')
   const [downloads, setDownloads] = useState({})
   const [activePolls, setActivePolls] = useState(new Set())
+  const [clearConfirm, setClearConfirm] = useState(false)
+  const [dbBusy, setDbBusy] = useState(false)
 
   const loadSettings = useCallback(async () => {
     try {
@@ -345,6 +370,41 @@ function Settings({ adminKey }) {
     setLoading(false)
   }
 
+  const exportDb = async () => {
+    setDbBusy(true)
+    try {
+      const res = await fetch(`${API_BASE}/db/export`, { headers: { 'X-Admin-Key': adminKey } })
+      if (!res.ok) throw new Error(`Export failed: HTTP ${res.status}`)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `assistant_db_${new Date().toISOString().slice(0, 10)}.db`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setMessage(`Export error: ${e.message}`)
+    }
+    setDbBusy(false)
+  }
+
+  const clearDb = async () => {
+    if (!clearConfirm) { setClearConfirm(true); return }
+    setDbBusy(true)
+    setClearConfirm(false)
+    try {
+      const res = await fetch(`${API_BASE}/db/clear`, {
+        method: 'POST',
+        headers: { 'X-Admin-Key': adminKey },
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setMessage('Database cleared — conversations, leads, and unknown queries deleted.')
+    } catch (e) {
+      setMessage(`Clear error: ${e.message}`)
+    }
+    setDbBusy(false)
+  }
+
   const triggerDownload = async (voiceId) => {
     try {
       await fetch(`${API_BASE}/voices/download`, {
@@ -381,7 +441,7 @@ function Settings({ adminKey }) {
               checked={whisperMode === 'backend'}
               onChange={() => setWhisperMode('backend')}
             />
-            Backend Server (Pi CPU)
+            Backend Server
           </label>
           <label>
             <input
@@ -407,7 +467,7 @@ function Settings({ adminKey }) {
               checked={piperMode === 'backend'}
               onChange={() => setPiperMode('backend')}
             />
-            Backend Server (Pi CPU)
+            Backend Server
           </label>
           <label>
             <input
@@ -440,6 +500,24 @@ function Settings({ adminKey }) {
       <button className="primary" onClick={save} disabled={loading}>
         {loading ? 'Saving…' : 'Save Settings'}
       </button>
+
+      <div className="db-section">
+        <h3>Database</h3>
+        <p className="db-desc">Export a snapshot of all data, or wipe conversations and leads.</p>
+        <div className="db-actions">
+          <button onClick={exportDb} disabled={dbBusy} className="db-btn">
+            {dbBusy ? 'Exporting…' : 'Export DB'}
+          </button>
+          <button
+            onClick={clearDb}
+            disabled={dbBusy}
+            className={`db-btn db-btn-danger${clearConfirm ? ' confirm' : ''}`}
+            onBlur={() => setClearConfirm(false)}
+          >
+            {clearConfirm ? 'Confirm — this cannot be undone' : 'Clear DB'}
+          </button>
+        </div>
+      </div>
 
       <h3 style={{ marginTop: '32px' }}>Voice Model Status (Backend)</h3>
       <table className="voices-status-table">

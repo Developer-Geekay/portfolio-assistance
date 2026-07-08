@@ -42,7 +42,7 @@ Cosine Similarity Search  ← pre-built FAISS index from knowledge_base.json
 | Generator | Gemma 4 E2B QAT GGUF via `llama-cpp-python` |
 | API server | FastAPI + Uvicorn |
 | Knowledge base | Hand-crafted `knowledge_base.json` (57 facts) |
-| Gap logging | SQLite (`unknown_queries.db`) |
+| Gap logging | SQLite (`app.db`) |
 | Runtime target | Raspberry Pi 5 8GB, under 1GB total |
 
 ---
@@ -60,7 +60,7 @@ gokul-ai/
 ├── generator.py             # llama-cpp-python wrapper, Gemma 4
 ├── chat.py                  # terminal test loop with intent detection
 ├── main.py                  # FastAPI server, /ask, /retrain, /unknown-queries
-└── unknown_queries.db       # auto-logged unanswered questions
+└── app.db       # auto-logged unanswered questions
 ```
 
 ---

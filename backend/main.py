@@ -23,7 +23,7 @@ load_dotenv()   # backend/.env — loaded before engine reads its env vars
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 import engine
 from intent import (detect_intent, extract_contact, GREETING_RESPONSE,
@@ -628,6 +628,44 @@ async def retrain(request: Request):
         return {"status": "ok"}
     except Exception as e:
         return {"status": "error", "detail": str(e)}
+
+
+@app.get("/db/export")
+async def export_db(request: Request):
+    """Download a consistent snapshot of app.db (WAL-checkpointed copy)."""
+    require_admin(request)
+    import shutil
+    conn.execute("PRAGMA wal_checkpoint(FULL)")
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        shutil.copy2("app.db", tmp.name)
+        tmp_path = tmp.name
+
+    def stream_and_cleanup():
+        try:
+            with open(tmp_path, "rb") as f:
+                while chunk := f.read(65536):
+                    yield chunk
+        finally:
+            os.unlink(tmp_path)
+
+    from datetime import date
+    filename = f"assistant_db_{date.today().isoformat()}.db"
+    return StreamingResponse(
+        stream_and_cleanup(),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.post("/db/clear")
+async def clear_db(request: Request):
+    """Delete all conversations, leads, and unknown queries. Settings are preserved."""
+    require_admin(request)
+    conn.execute("DELETE FROM conversations")
+    conn.execute("DELETE FROM leads")
+    conn.execute("DELETE FROM queries")
+    conn.commit()
+    return {"status": "ok", "cleared": ["conversations", "leads", "queries"]}
 
 
 if __name__ == "__main__":
