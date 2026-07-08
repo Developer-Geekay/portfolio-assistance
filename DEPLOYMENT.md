@@ -52,10 +52,10 @@ mkdir -p models/generator
 
 # Piper voice — already in git (models/tts/). To change or re-download the
 # voice, fetch BOTH files (.onnx and .onnx.json) — Piper fails without the json:
-#   wget -O models/tts/en_US-lessac-medium.onnx \
-#     "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx"
-#   wget -O models/tts/en_US-lessac-medium.onnx.json \
-#     "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json"
+#   wget -O models/tts/en_US-amy-medium.onnx \
+#     "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-amy-medium.onnx"
+#   wget -O models/tts/en_US-amy-medium.onnx.json \
+#     "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-amy-medium.onnx.json"
 #   Voice catalog: https://rhasspy.github.io/piper-samples/
 
 # Whisper downloads itself on first start (base.en, ~150MB, cached in ~/.cache)

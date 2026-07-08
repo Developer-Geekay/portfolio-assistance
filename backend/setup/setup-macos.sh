@@ -95,7 +95,7 @@ if [ ! -f "$GEN_FILE" ]; then
 fi
 
 TTS_BASE="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium"
-for f in en_US-lessac-medium.onnx en_US-lessac-medium.onnx.json; do
+for f in en_US-amy-medium.onnx en_US-amy-medium.onnx.json; do
     [ -f "models/tts/$f" ] || curl -L --fail --progress-bar -o "models/tts/$f" "$TTS_BASE/$f"
 done
 

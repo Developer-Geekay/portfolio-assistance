@@ -133,7 +133,7 @@ if (-not (Test-Path $GenFile)) {
 }
 
 $TtsBase = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium"
-foreach ($f in @("en_US-lessac-medium.onnx", "en_US-lessac-medium.onnx.json")) {
+foreach ($f in @("en_US-amy-medium.onnx", "en_US-amy-medium.onnx.json")) {
     if (-not (Test-Path "models\tts\$f")) {
         curl.exe -L --fail -o "models\tts\$f" "$TtsBase/$f"
         if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: TTS voice download failed."; exit 1 }

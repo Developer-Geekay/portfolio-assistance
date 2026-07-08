@@ -2,11 +2,11 @@
 // renders immediately — the heavy ONNX code is only loaded when initPiper()
 // is called from a useEffect.
 
-const VOICE   = 'en_US-lessac-medium'
+const VOICE = 'en_US-amy-medium'
 const SPEAKER = 0
 
-let _engine      = null
-let _ready       = false
+let _engine = null
+let _ready = false
 let _initPromise = null   // singleton guard: Strict Mode runs effects twice
 
 export function isPiperReady() { return _ready }
@@ -17,11 +17,11 @@ export function isPiperReady() { return _ready }
 class CachingFetchProvider {
   static CACHE = 'piper-voices-v1'
 
-  destroy() {}
+  destroy() { }
 
   async fetch(url) {
     let cache
-    try { cache = await caches.open(CachingFetchProvider.CACHE) } catch {}
+    try { cache = await caches.open(CachingFetchProvider.CACHE) } catch { }
 
     if (cache) {
       const hit = await cache.match(url)
@@ -32,7 +32,7 @@ class CachingFetchProvider {
     if (!response.ok) throw new Error(`${response.status} fetching ${url}`)
 
     // Store a clone so we can still consume the original body below
-    if (cache) cache.put(url, response.clone()).catch(() => {})
+    if (cache) cache.put(url, response.clone()).catch(() => { })
 
     return url.endsWith('.json') ? response.json() : response.arrayBuffer()
   }

@@ -22,7 +22,7 @@ from intent import (detect_intent, extract_contact, GREETING_RESPONSE,
                     PERSONAL_RESPONSE, LEAD_RESPONSE)
 
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base.en")
-PIPER_VOICE   = os.environ.get("PIPER_VOICE", "models/tts/en_US-lessac-medium.onnx")
+PIPER_VOICE   = os.environ.get("PIPER_VOICE", "models/tts/en_US-amy-medium.onnx")
 
 # STT compute target — "cuda" needs cuBLAS/cuDNN; anything that fails to load
 # falls back to CPU int8 so the server always comes up.
