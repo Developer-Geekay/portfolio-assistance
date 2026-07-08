@@ -18,6 +18,7 @@ const TABS = [
   { id: 'conversations', label: 'Conversations' },
   { id: 'unknown',       label: 'Unanswered' },
   { id: 'activity',      label: 'Activity' },
+  { id: 'settings',      label: 'Settings' },
 ]
 
 const when = (iso) => iso ? iso.replace('T', ' ').slice(0, 16) + ' UTC' : ''
@@ -99,6 +100,7 @@ export default function Admin() {
             {tab === 'conversations' && <Conversations rows={data.conversations} />}
             {tab === 'unknown'       && <Unknown rows={data.unknown} />}
             {tab === 'activity'      && <Activity stats={data.stats} />}
+            {tab === 'settings'      && <Settings adminKey={key} />}
           </div>
         </>
       )}
@@ -143,12 +145,13 @@ function Sessions({ rows }) {
   if (!rows.length) return <Empty>No sessions recorded yet.</Empty>
   return (
     <table>
-      <thead><tr><th>Last activity</th><th>Session</th><th>Turns</th><th>Started</th><th>IP</th></tr></thead>
+      <thead><tr><th>Last activity</th><th>Session</th><th>Device</th><th>Turns</th><th>Started</th><th>IP</th></tr></thead>
       <tbody>
         {rows.map((s, i) => (
           <tr key={i}>
             <td className="mono">{when(s.last)}</td>
             <td className="mono">{s.session.slice(0, 8)}</td>
+            <td>{s.device || 'Unknown'}</td>
             <td>{s.turns}</td>
             <td className="mono">{when(s.started)}</td>
             <td className="mono">{s.ip}</td>
@@ -225,5 +228,224 @@ function Activity({ stats }) {
         </tbody>
       </table>
     </>
+  )
+}
+
+function Settings({ adminKey }) {
+  const [whisperMode, setWhisperMode] = useState('backend')
+  const [piperMode, setPiperMode] = useState('backend')
+  const [piperVoice, setPiperVoice] = useState('en_US-amy-medium')
+  const [voices, setVoices] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState('')
+  const [downloads, setDownloads] = useState({})
+
+  const loadSettings = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/settings`)
+      const data = await res.json()
+      setWhisperMode(data.whisper_mode)
+      setPiperMode(data.piper_mode)
+      setPiperVoice(data.piper_voice)
+      setVoices(data.voices || [])
+    } catch (e) {
+      console.error(e)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadSettings()
+  }, [loadSettings])
+
+  useEffect(() => {
+    const intervals = {}
+    voices.forEach(v => {
+      if (!v.downloaded) {
+        const check = async () => {
+          try {
+            const res = await fetch(`${API_BASE}/voices/download-progress?voice=${v.id}`)
+            const data = await res.json()
+            if (data.downloading) {
+              setDownloads(prev => ({ ...prev, [v.id]: data.progress }))
+            } else if (data.downloaded) {
+              setDownloads(prev => {
+                const next = { ...prev }
+                delete next[v.id]
+                return next
+              })
+              loadSettings()
+              clearInterval(intervals[v.id])
+            }
+          } catch (e) {
+            console.error(e)
+          }
+        }
+        check()
+        intervals[v.id] = setInterval(check, 2000)
+      }
+    })
+    return () => {
+      Object.values(intervals).forEach(clearInterval)
+    }
+  }, [voices, loadSettings])
+
+  const save = async () => {
+    setLoading(true)
+    setMessage('')
+    try {
+      const res = await fetch(`${API_BASE}/settings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Admin-Key': adminKey
+        },
+        body: JSON.stringify({
+          whisper_mode: whisperMode,
+          piper_mode: piperMode,
+          piper_voice: piperVoice
+        })
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setMessage('Settings saved successfully!')
+      loadSettings()
+    } catch (e) {
+      setMessage(`Error: ${e.message}`)
+    }
+    setLoading(false)
+  }
+
+  const triggerDownload = async (voiceId) => {
+    try {
+      await fetch(`${API_BASE}/voices/download`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ voice: voiceId })
+      })
+      setVoices(prev => prev.map(v => v.id === voiceId ? { ...v, downloaded: false } : v))
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  return (
+    <div className="admin-settings">
+      <h2>System Configuration</h2>
+      {message && <p className="settings-msg">{message}</p>}
+      
+      <div className="settings-group">
+        <label>Whisper Speech-to-Text Location</label>
+        <div className="radio-options">
+          <label>
+            <input
+              type="radio"
+              name="whisper_mode"
+              value="backend"
+              checked={whisperMode === 'backend'}
+              onChange={() => setWhisperMode('backend')}
+            />
+            Backend Server (Pi CPU)
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="whisper_mode"
+              value="wasm"
+              checked={whisperMode === 'wasm'}
+              onChange={() => setWhisperMode('wasm')}
+            />
+            Browser WASM (Client)
+          </label>
+        </div>
+      </div>
+
+      <div className="settings-group">
+        <label>Piper Text-to-Speech Location</label>
+        <div className="radio-options">
+          <label>
+            <input
+              type="radio"
+              name="piper_mode"
+              value="backend"
+              checked={piperMode === 'backend'}
+              onChange={() => setPiperMode('backend')}
+            />
+            Backend Server (Pi CPU)
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="piper_mode"
+              value="wasm"
+              checked={piperMode === 'wasm'}
+              onChange={() => setPiperMode('wasm')}
+            />
+            Browser WASM (Client)
+          </label>
+        </div>
+      </div>
+
+      <div className="settings-group">
+        <label>Default Server Voice Model</label>
+        <select
+          value={piperVoice}
+          onChange={(e) => setPiperVoice(e.target.value)}
+          className="voice-select-admin"
+        >
+          {voices.map(v => (
+            <option key={v.id} value={v.id}>
+              {v.name} {!v.downloaded ? '(Not Downloaded)' : ''}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <button className="primary" onClick={save} disabled={loading}>
+        {loading ? 'Saving…' : 'Save Settings'}
+      </button>
+
+      <h3 style={{ marginTop: '32px' }}>Voice Model Status (Backend)</h3>
+      <table className="voices-status-table">
+        <thead>
+          <tr>
+            <th>Voice Model</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {voices.map(v => {
+            const pct = downloads[v.id]
+            const isDownloading = pct !== undefined
+            return (
+              <tr key={v.id}>
+                <td className="mono">{v.id}</td>
+                <td>
+                  {v.downloaded ? (
+                    <span className="pill greeting">Ready</span>
+                  ) : isDownloading ? (
+                    <span className="pill personal">Downloading ({pct}%)</span>
+                  ) : (
+                    <span className="pill unknown">Not Available</span>
+                  )}
+                </td>
+                <td>
+                  {!v.downloaded && (
+                    <button
+                      className="admin-download-btn"
+                      disabled={isDownloading}
+                      onClick={() => triggerDownload(v.id)}
+                    >
+                      {isDownloading ? `Downloading...` : 'Download to Backend'}
+                    </button>
+                  )}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
   )
 }

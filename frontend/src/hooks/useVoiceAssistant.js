@@ -27,16 +27,6 @@ function isFillerOnly(text) {
   return words.every(w => FILLER_WORDS.has(w))
 }
 
-// Per-browser-tab session: sessionStorage lives exactly until the tab closes
-function getSessionId() {
-  let sid = sessionStorage.getItem('gokul_session')
-  if (!sid) {
-    sid = crypto.randomUUID()
-    sessionStorage.setItem('gokul_session', sid)
-  }
-  return sid
-}
-
 // Pick a recording format the browser supports (webm on Chrome/Android,
 // mp4/AAC on iOS Safari) — Whisper decodes both server-side
 function pickRecordingFormat() {
@@ -54,10 +44,19 @@ function pickRecordingFormat() {
 export default function useVoiceAssistant() {
   const [state, setState]           = useState('idle')
   const [transcript, setTranscript] = useState('')
+  
+  // Settings and mode states
+  const [whisperMode, setWhisperMode] = useState('backend') // 'wasm' | 'backend'
+  const [piperMode, setPiperMode] = useState('backend')     // 'wasm' | 'backend'
+  const [selectedVoice, setSelectedVoice] = useState('en_US-amy-medium')
+  const [availableVoices, setAvailableVoices] = useState([])
+  const [voiceDownloadProgress, setVoiceDownloadProgress] = useState(0)
+
   const [modelReady, setModelReady]         = useState(false)
   const [modelProgress, setModelProgress]   = useState(0)
-  const [piperReady, setPiperReady]         = useState(!USE_PIPER_WASM)
+  const [piperReady, setPiperReady]         = useState(true)
 
+  const sessionIdRef  = useRef(crypto.randomUUID())
   const stateRef      = useRef('idle')
   const analyserRef   = useRef(null)    // mic while listening, playback while speaking
   const micStreamRef  = useRef(null)
@@ -79,21 +78,93 @@ export default function useVoiceAssistant() {
 
   const setBoth = (s) => { stateRef.current = s; setState(s) }
 
+  // Load settings on mount
+  useEffect(() => {
+    fetch(`${API_BASE}/settings`)
+      .then(res => res.json())
+      .then(data => {
+        setWhisperMode(data.whisper_mode)
+        setPiperMode(data.piper_mode)
+        setAvailableVoices(data.voices || [])
+        
+        if (data.piper_mode === 'wasm') {
+          const saved = localStorage.getItem('assistant_selected_voice')
+          if (saved) {
+            setSelectedVoice(saved)
+          } else {
+            setSelectedVoice(data.piper_voice)
+          }
+        } else {
+          setSelectedVoice(data.piper_voice)
+        }
+      })
+      .catch(err => console.error("Error loading settings:", err))
+  }, [])
+
+  // Change voice model locally/server-side
+  const changeVoice = useCallback(async (voiceId) => {
+    setSelectedVoice(voiceId)
+    if (piperMode === 'wasm') {
+      localStorage.setItem('assistant_selected_voice', voiceId)
+    } else if (piperMode === 'backend') {
+      try {
+        const res = await fetch(`${API_BASE}/voices/download`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ voice: voiceId })
+        })
+        const data = await res.json()
+        if (data.status === 'started' || data.status === 'downloading') {
+          setPiperReady(false)
+          setVoiceDownloadProgress(0)
+          
+          const interval = setInterval(async () => {
+            try {
+              const pRes = await fetch(`${API_BASE}/voices/download-progress?voice=${voiceId}`)
+              const pData = await pRes.json()
+              setVoiceDownloadProgress(pData.progress)
+              if (pData.downloaded || pData.progress === 100) {
+                setPiperReady(true)
+                setVoiceDownloadProgress(100)
+                clearInterval(interval)
+              }
+            } catch (e) {
+              console.error(e)
+              setPiperReady(true)
+              clearInterval(interval)
+            }
+          }, 1500)
+        } else {
+          setPiperReady(true)
+          setVoiceDownloadProgress(100)
+        }
+      } catch (e) {
+        console.error("Backend voice trigger error:", e)
+        setPiperReady(true)
+      }
+    }
+  }, [piperMode])
+
   // ── Whisper WASM: download model once on mount (only when feature enabled) ─
   useEffect(() => {
-    if (!USE_WHISPER_WASM) { setModelReady(true); return }
+    if (whisperMode !== 'wasm') { setModelReady(true); return }
+    setModelReady(false)
     initWhisper(({ progress }) => setModelProgress(Math.round(progress * 100)))
       .then(() => { setModelReady(true); setModelProgress(100) })
       .catch(e => console.warn('[whisper] model init failed:', e))
-  }, [])
+  }, [whisperMode])
 
   // ── Piper WASM: load engine + warm up once on mount ────────────────
   useEffect(() => {
-    if (!USE_PIPER_WASM) return
-    initPiper()
-      .then(() => setPiperReady(true))
+    if (piperMode !== 'wasm') { setPiperReady(true); return }
+    setPiperReady(false)
+    setVoiceDownloadProgress(0)
+    initPiper(selectedVoice, (progress) => {
+      setVoiceDownloadProgress(progress)
+    })
+      .then(() => { setPiperReady(true); setVoiceDownloadProgress(100) })
       .catch(e => console.warn('[piper] engine init failed:', e))
-  }, [])
+  }, [piperMode, selectedVoice])
 
   // ── playback plumbing ───────────────────────────────────────────────
   const ensurePlayback = useCallback(() => {
@@ -133,35 +204,28 @@ export default function useVoiceAssistant() {
     analyserRef.current = null
   }, [])
 
-  // ── speak: WAV through the shared <audio> — source is either Piper WASM
-  // (browser) or the Pi /speak endpoint, controlled by VITE_PIPER_WASM.
-  // Words stream into the transcript in sync with playback progress.
   const speak = useCallback(async (text, resumeAfter = true) => {
-    // Stay in 'processing' while the audio blob is being generated/fetched —
-    // only flip to 'speaking' once the audio is actually ready to play so
-    // the ring animation matches reality.
     setBoth('processing')
     let syncIv
     try {
       let blob
-      if (USE_PIPER_WASM) {
-        const result = await piperGenerate(text)
+      if (piperMode === 'wasm') {
+        const result = await piperGenerate(text, selectedVoice)
         blob = result.blob
       } else {
         const res = await fetch(`${API_BASE}/speak`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ text }),
+          body:    JSON.stringify({ text, voice: selectedVoice }),
         })
         if (!res.ok) throw new Error(`speak ${res.status}`)
         blob = await res.blob()
       }
-      // Audio is ready — transition visually to speaking now
       setBoth('speaking')
       const url  = URL.createObjectURL(blob)
       const el   = audioElRef.current
       outCtxRef.current.resume()
-      analyserRef.current = outAnalyserRef.current   // ring follows the voice
+      analyserRef.current = outAnalyserRef.current
 
       const words = text.split(/\s+/)
       setTranscript('')
@@ -180,34 +244,31 @@ export default function useVoiceAssistant() {
         }).catch(resolve)
       })
       URL.revokeObjectURL(url)
-      setTranscript(text)   // ensure the full sentence lands
+      setTranscript(text)
     } catch (e) {
       console.warn('[voice] speak error:', e)
     }
     clearInterval(syncIv)
     analyserRef.current = null
     if (resumeAfter) {
-      // conversation continues: answer done → listen for the next question
       beginListeningRef.current({ postAnswer: true })
     } else {
       setBoth('idle')
       setTranscript('')
     }
-  }, [])
+  }, [piperMode, selectedVoice])
 
-  // ── ask the brain ───────────────────────────────────────────────────
   const askApi = useCallback(async (question) => {
     setBoth('processing')
     try {
       const res = await fetch(`${API_BASE}/ask`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ text: question, history: historyRef.current, session_id: getSessionId() }),
+        body:    JSON.stringify({ text: question, history: historyRef.current, session_id: sessionIdRef.current }),
       })
       const data   = await res.json()
       const answer = data.answer || "I don't have that information."
       if (data.end) {
-        // visitor said goodbye — speak the farewell and stop listening
         turnsRef.current   = 0
         historyRef.current = []
         await speak(answer, false)
@@ -221,7 +282,6 @@ export default function useVoiceAssistant() {
     }
   }, [speak])
 
-  // ── stop recording → Whisper → ask ─────────────────────────────────
   const finalize = useCallback(async () => {
     const recorder = recorderRef.current
     const heard    = heardRef.current
@@ -231,7 +291,6 @@ export default function useVoiceAssistant() {
     if (!recorder || recorder.state === 'inactive' || !heard) {
       stopMic()
       if (turnsRef.current > 0) {
-        // conversation ends by silence → acknowledge, then go idle
         turnsRef.current   = 0
         historyRef.current = []
         await speak(FAREWELL, false)
@@ -242,7 +301,6 @@ export default function useVoiceAssistant() {
       return
     }
 
-    // collect the final chunk, then transcribe
     const blob = await new Promise((resolve) => {
       recorder.onstop = () => resolve(new Blob(chunksRef.current, { type: formatRef.current.mime }))
       recorder.stop()
@@ -252,7 +310,7 @@ export default function useVoiceAssistant() {
 
     try {
       let text
-      if (USE_WHISPER_WASM) {
+      if (whisperMode === 'wasm') {
         text = await transcribeBlob(blob)
       } else {
         const form = new FormData()
@@ -262,7 +320,6 @@ export default function useVoiceAssistant() {
         text = (data.text || '').trim()
       }
       if (!text || isFillerOnly(text)) {
-        // nothing meaningful heard — keep the conversation open, listen again
         beginListeningRef.current({ postAnswer: turnsRef.current > 0 })
         return
       }
@@ -272,9 +329,8 @@ export default function useVoiceAssistant() {
       console.warn('[voice] transcription error:', e)
       await speak("Sorry, I couldn't reach the server.")
     }
-  }, [stopMic, askApi, speak])
+  }, [stopMic, askApi, speak, whisperMode])
 
-  // ── listening: record + client-side silence detection ──────────────
   const beginListening = useCallback(async (opts = {}) => {
     stopPlayback()
     setTranscript('')
@@ -294,12 +350,11 @@ export default function useVoiceAssistant() {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     } catch {
-      setBoth('idle')   // mic denied
+      setBoth('idle')
       return
     }
     micStreamRef.current = stream
 
-    // amplitude analyser — drives both the ring and silence detection
     const ctx = new (window.AudioContext || window.webkitAudioContext)()
     micCtxRef.current = ctx
     const analyser = ctx.createAnalyser()
@@ -314,12 +369,9 @@ export default function useVoiceAssistant() {
 
     setBoth('listening')
 
-    // voice activity detection: RMS level vs an adaptive noise floor, so it
-    // works with quiet mics and noisy rooms alike. Speech begins → wait for
-    // a SILENCE_MS pause to finalize.
     const samples = new Uint8Array(analyser.fftSize)
-    let noiseFloor = 0.05   // starts high, adapts down to the room quickly
-    let loudStreak = 0      // consecutive loud frames — real speech sustains
+    let noiseFloor = 0.05
+    let loudStreak = 0
     vadTimerRef.current = setInterval(() => {
       analyser.getByteTimeDomainData(samples)
       let sum = 0
@@ -329,15 +381,12 @@ export default function useVoiceAssistant() {
       }
       const amp = Math.sqrt(sum / samples.length)
 
-      // track the quiet level: fast down, very slow up
       noiseFloor += (amp - noiseFloor) * (amp < noiseFloor ? 0.2 : 0.005)
       const threshold = Math.max(VAD_MIN, noiseFloor * 2.5)
 
       const now = Date.now()
       if (amp > threshold) {
         loudStreak += 1
-        // one blip (chair creak, breath, playback tail) isn't speech —
-        // require ~300ms sustained before we commit to transcribing
         if (loudStreak >= 3) {
           heardRef.current   = true
           spokeAtRef.current = now
@@ -350,7 +399,6 @@ export default function useVoiceAssistant() {
       }
     }, 100)
 
-    // shorter window after an answer — quiet visitor gets a polite goodbye
     noSpeechRef.current = setTimeout(() => {
       if (!heardRef.current) finalize()
     }, opts.postAnswer ? POST_ANSWER_MS : NO_SPEECH_MS)
@@ -368,17 +416,31 @@ export default function useVoiceAssistant() {
     setTranscript('')
   }, [stopMic, stopPlayback])
 
-  // Click on the ring: idle → listen; anything else → end the conversation
   const toggle = useCallback(() => {
     if (stateRef.current === 'idle') {
-      if (USE_WHISPER_WASM && !isWhisperReady()) return   // whisper still downloading
-      if (USE_PIPER_WASM   && !isPiperReady())   return   // piper still warming up
-      ensurePlayback()   // user gesture unlocks audio output (iOS requirement)
+      if (whisperMode === 'wasm' && !isWhisperReady()) return
+      if (piperMode === 'wasm' && !isPiperReady(selectedVoice)) return
+      ensurePlayback()
       beginListening()
     } else {
       cancel()
     }
-  }, [ensurePlayback, beginListening, cancel])
+  }, [ensurePlayback, beginListening, cancel, whisperMode, piperMode, selectedVoice])
 
-  return { state, stateRef, transcript, toggle, analyserRef, modelReady, modelProgress, piperReady }
+  return {
+    state,
+    stateRef,
+    transcript,
+    toggle,
+    analyserRef,
+    modelReady,
+    modelProgress,
+    piperReady,
+    whisperMode,
+    piperMode,
+    selectedVoice,
+    availableVoices,
+    voiceDownloadProgress,
+    changeVoice
+  }
 }

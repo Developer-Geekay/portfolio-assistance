@@ -43,7 +43,22 @@ export default function Stage() {
   const stageRef  = useRef(null)
   const canvasRef = useRef(null)
 
-  const { state, stateRef, transcript, toggle, analyserRef, modelReady, modelProgress, piperReady } = useVoiceAssistant()
+  const {
+    state,
+    stateRef,
+    transcript,
+    toggle,
+    analyserRef,
+    modelReady,
+    modelProgress,
+    piperReady,
+    whisperMode,
+    piperMode,
+    selectedVoice,
+    availableVoices,
+    voiceDownloadProgress,
+    changeVoice
+  } = useVoiceAssistant()
 
   // toggle lives in a ref so the canvas click handler always sees the latest
   const toggleRef = useRef(toggle)
@@ -58,27 +73,26 @@ export default function Stage() {
   // Progress bar percentage — driven by real Whisper progress or a fake fill
   const [barPct, setBarPct] = useState(0)
 
-  // Fake fill: slowly increments toward 85 while WASM models are loading.
-  // Gives the user a sense of progress even when we have no real signal (Piper).
+  const anyWasm = whisperMode === 'wasm' || piperMode === 'wasm'
+
+  // Update bar percentage dynamically
   useEffect(() => {
-    if (!ANY_WASM || loaderDone) return
-    if (USE_WHISPER_WASM && !modelReady) {
-      // Real Whisper download progress takes priority
-      setBarPct(Math.max(barPct, modelProgress))
-      return
+    if (!anyWasm) return
+    if (whisperMode === 'wasm' && !modelReady) {
+      setBarPct(modelProgress)
+    } else if (piperMode === 'wasm' && !piperReady) {
+      setBarPct(voiceDownloadProgress)
     }
-    // Slow fake fill for Piper warmup (or no Whisper)
-    const iv = setInterval(() => {
-      setBarPct(p => Math.min(p + 0.4 + Math.random() * 0.4, 85))
-    }, 350)
-    return () => clearInterval(iv)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modelReady, piperReady, modelProgress, loaderDone])
+  }, [modelReady, modelProgress, piperReady, voiceDownloadProgress, whisperMode, piperMode, anyWasm])
 
   // Dismiss loader once both models are ready (or immediately for no-WASM).
   useEffect(() => {
-    if (ANY_WASM) {
-      if (!modelReady || !piperReady) return
+    if (anyWasm) {
+      if (!modelReady || !piperReady) {
+        setLoaderDone(false)
+        loaderDoneRef.current = false
+        return
+      }
       setBarPct(100)
       const t = setTimeout(() => {
         setLoaderDone(true)
@@ -86,15 +100,15 @@ export default function Stage() {
       }, 400)
       return () => clearTimeout(t)
     } else {
-      // No WASM: fake loader for 1.4 s, then reveal ring
+      // No WASM: fake loader for 1.0 s, then reveal ring
       setBarPct(96)
       const t = setTimeout(() => {
         setBarPct(100)
         setTimeout(() => { setLoaderDone(true); loaderDoneRef.current = true }, 300)
-      }, 1400)
+      }, 1000)
       return () => clearTimeout(t)
     }
-  }, [modelReady, piperReady])
+  }, [modelReady, piperReady, anyWasm])
 
   // stage.ready class enables CSS transitions for .legend, .start, .hint
   useEffect(() => {
@@ -396,8 +410,34 @@ export default function Stage() {
     }
   }, [stateRef, analyserRef])
 
+  const isDownloadingVoice = piperMode === 'wasm' && !piperReady
+  const displayMsgText = isDownloadingVoice
+    ? `Downloading Voice Model (${selectedVoice})…`
+    : loaderMsg.text
+
   return (
     <div className="stage" ref={stageRef}>
+      {piperMode === 'wasm' && availableVoices.length > 0 && state === 'idle' && (
+        <div className="voice-selector-container">
+          <select
+            value={selectedVoice}
+            onChange={(e) => changeVoice(e.target.value)}
+            className="voice-select"
+            disabled={state !== 'idle'}
+          >
+            {availableVoices.map(v => (
+              <option key={v.id} value={v.id}>
+                {v.name}
+              </option>
+            ))}
+          </select>
+          {voiceDownloadProgress > 0 && voiceDownloadProgress < 100 && (
+            <div className="voice-download-progress">
+              Downloading Voice: {voiceDownloadProgress}%
+            </div>
+          )}
+        </div>
+      )}
       <div className="legend" aria-hidden="true"><span>Gokula</span><span>Kannan</span></div>
       <canvas className="stage-canvas" ref={canvasRef} />
       <div className="start">Start</div>
@@ -410,13 +450,15 @@ export default function Stage() {
       )}
 
       <div className={`loader${loaderDone ? ' done' : ''}`}>
-        <div className="loader-msg" key={loaderMsg.key}>{loaderMsg.text}</div>
+        <div className="loader-msg" key={isDownloadingVoice ? 'downloading' : loaderMsg.key}>
+          {displayMsgText}
+        </div>
         <LoaderParticles />
         <div className="loader-bar-wrap">
           <div className="track">
             <div className="bar" style={{ width: `${barPct}%` }} />
           </div>
-          {ANY_WASM && (
+          {anyWasm && (
             <span className="loader-pct">
               {loaderDone ? '✓' : barPct < 100 ? `${Math.round(barPct)}%` : ''}
             </span>

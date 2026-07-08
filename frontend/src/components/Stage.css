@@ -236,3 +236,50 @@
   }
   .hint { bottom: 44px; }
 }
+
+/* ---- voice selector on main stage ---- */
+.voice-selector-container {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+.voice-select {
+  background: rgba(223, 230, 236, 0.05);
+  border: 1px solid rgba(223, 230, 236, 0.15);
+  color: var(--white);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.voice-select:hover:not(:disabled) {
+  background: rgba(223, 230, 236, 0.1);
+  border-color: rgba(223, 230, 236, 0.3);
+}
+.voice-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.voice-select option {
+  background: #0b0e12;
+  color: var(--white);
+}
+.voice-download-progress {
+  font-size: 10px;
+  color: var(--dim);
+  letter-spacing: 0.05em;
+  background: rgba(11, 14, 18, 0.6);
+  padding: 4px 8px;
+  border-radius: 4px;
+}

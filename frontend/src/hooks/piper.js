@@ -2,14 +2,14 @@
 // renders immediately — the heavy ONNX code is only loaded when initPiper()
 // is called from a useEffect.
 
-const VOICE = 'en_US-amy-medium'
 const SPEAKER = 0
 
 let _engine = null
-let _ready = false
-let _initPromise = null   // singleton guard: Strict Mode runs effects twice
+let _activeVoiceId = null
 
-export function isPiperReady() { return _ready }
+export function isPiperReady(voiceId = 'en_US-amy-medium') {
+  return _engine !== null && _activeVoiceId === voiceId
+}
 
 // Wraps fetch() with Cache API so the 63 MB ONNX model is stored locally
 // after the first download. Subsequent visits (and generate() calls) hit
@@ -31,50 +31,74 @@ class CachingFetchProvider {
     const response = await window.fetch(url)
     if (!response.ok) throw new Error(`${response.status} fetching ${url}`)
 
-    // Store a clone so we can still consume the original body below
-    if (cache) cache.put(url, response.clone()).catch(() => { })
+    const contentLength = response.headers.get('content-length')
+    const total = contentLength ? parseInt(contentLength, 10) : 0
 
-    return url.endsWith('.json') ? response.json() : response.arrayBuffer()
+    if (total === 0 || url.endsWith('.json')) {
+      if (cache) cache.put(url, response.clone()).catch(() => { })
+      return url.endsWith('.json') ? response.json() : response.arrayBuffer()
+    }
+
+    const reader = response.body.getReader()
+    let loaded = 0
+    const chunks = []
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+      loaded += value.length
+      if (window.onWasmDownloadProgress) {
+        window.onWasmDownloadProgress(url, loaded, total)
+      }
+    }
+
+    const buffer = new Uint8Array(loaded)
+    let offset = 0
+    for (const chunk of chunks) {
+      buffer.set(chunk, offset)
+      offset += chunk.length
+    }
+
+    const cachedResponse = new Response(buffer)
+    if (cache) cache.put(url, cachedResponse.clone()).catch(() => { })
+
+    return buffer.buffer
   }
 }
 
-export async function initPiper() {
-  if (_initPromise) return _initPromise
-  _initPromise = _doInit()
-  return _initPromise
+export async function initPiper(voiceId = 'en_US-amy-medium', onProgress = null) {
+  if (!_engine || _activeVoiceId !== voiceId) {
+    _activeVoiceId = voiceId
+    _engine = null
+
+    const { PiperWebWorkerEngine, OnnxWebWorkerRuntime, HuggingFaceVoiceProvider } =
+      await import('piper-tts-web')
+
+    const voiceProvider = new HuggingFaceVoiceProvider({
+      provider: new CachingFetchProvider(),
+    })
+    _engine = new PiperWebWorkerEngine({
+      onnxRuntime: new OnnxWebWorkerRuntime({ numThreads: 1 }),
+      voiceProvider,
+    })
+
+    if (onProgress) {
+      window.onWasmDownloadProgress = (url, loaded, total) => {
+        if (url.includes(voiceId)) {
+          onProgress(Math.round((loaded / total) * 100))
+        }
+      }
+    }
+    await _engine.generate('Hi', voiceId, SPEAKER)
+    window.onWasmDownloadProgress = null
+  }
 }
 
-async function _doInit() {
-  // PiperWebWorkerEngine (not PiperWebEngine): the plain engine runs ONNX
-  // inference and phonemization on the main thread, freezing all UI
-  // animations for the duration of every generate() call. The worker
-  // variant moves both into Web Workers.
-  const { PiperWebWorkerEngine, OnnxWebWorkerRuntime, HuggingFaceVoiceProvider } =
-    await import('piper-tts-web')
 
-  const voiceProvider = new HuggingFaceVoiceProvider({
-    provider: new CachingFetchProvider(),
-  })
-  // numThreads: 1 — with more, ONNX spawns pthread sub-workers that reload
-  // OnnxWebWorker.js, whose message handler clobbers the pthread bootstrap
-  // and crashes with 'Unknown type undefined' (piper-tts-web packaging bug).
-  // Inference already runs off the main thread, so this only trades some
-  // synthesis speed, not UI smoothness.
-  _engine = new PiperWebWorkerEngine({
-    onnxRuntime: new OnnxWebWorkerRuntime({ numThreads: 1 }),
-    voiceProvider,
-  })
-
-  // Warm-up: pre-loads ONNX session + caches voice model so first real
-  // utterance has no cold-start delay. 'Hi' is chosen because it produces
-  // valid phonemes without risk of empty-tensor errors.
-  await _engine.generate('Hi', VOICE, SPEAKER)
-  _ready = true
-}  // end _doInit
-
-export async function piperGenerate(text) {
+export async function piperGenerate(text, voiceId = 'en_US-amy-medium') {
   if (!_engine) throw new Error('Piper not initialised')
-  const result = await _engine.generate(text, VOICE, SPEAKER)
+  const result = await _engine.generate(text, voiceId, SPEAKER)
   return { blob: result.file, duration: result.duration, phonemeData: result.phonemeData }
 }
 
