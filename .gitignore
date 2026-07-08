@@ -26,7 +26,7 @@ backend/index/
 backend/models/generator/*
 models/generator/*
 backend/test_results/*
-
+backend/models/tts/*
 
 # local references / scratch
 reference/*

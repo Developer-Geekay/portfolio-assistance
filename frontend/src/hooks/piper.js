@@ -25,7 +25,16 @@ class CachingFetchProvider {
 
     if (cache) {
       const hit = await cache.match(url)
-      if (hit) return url.endsWith('.json') ? hit.json() : hit.arrayBuffer()
+      if (hit) {
+        if (url.endsWith('.json')) {
+          const data = await hit.json()
+          if (data && data.inference) {
+            data.inference.length_scale = 1.18 // Slower, natural speaking rate
+          }
+          return data
+        }
+        return hit.arrayBuffer()
+      }
     }
 
     const response = await window.fetch(url)
@@ -36,7 +45,14 @@ class CachingFetchProvider {
 
     if (total === 0 || url.endsWith('.json')) {
       if (cache) cache.put(url, response.clone()).catch(() => { })
-      return url.endsWith('.json') ? response.json() : response.arrayBuffer()
+      if (url.endsWith('.json')) {
+        const data = await response.json()
+        if (data && data.inference) {
+          data.inference.length_scale = 1.18 // Slower, natural speaking rate
+        }
+        return data
+      }
+      return response.arrayBuffer()
     }
 
     const reader = response.body.getReader()

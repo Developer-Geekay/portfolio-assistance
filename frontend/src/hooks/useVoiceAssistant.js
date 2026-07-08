@@ -6,10 +6,10 @@ import { USE_WHISPER_WASM, USE_PIPER_WASM } from '../features'
 // vite dev proxy / nginx → FastAPI; override with VITE_API_BASE when mounted
 // inside another site whose /api is taken (e.g. /assistance-api in a portfolio)
 const API_BASE       = import.meta.env.VITE_API_BASE || '/api'
-const SILENCE_MS     = 1800     // pause after speech → user finished talking
+const SILENCE_MS     = 2500     // pause after speech → user finished talking
 const NO_SPEECH_MS   = 10000    // never spoke at all → give up, back to idle
 const POST_ANSWER_MS = 8000     // quiet after an answer → say goodbye, go idle
-const VAD_MIN        = 0.025    // absolute floor for the adaptive speech threshold
+const VAD_MIN        = 0.015    // absolute floor for the adaptive speech threshold
 const FAREWELL       = "Thank you! Glad to help — feel free to ask anytime."
 
 // Turns made only of these are mic noise / self-talk — never sent to the brain
@@ -216,7 +216,7 @@ export default function useVoiceAssistant() {
         const res = await fetch(`${API_BASE}/speak`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ text, voice: selectedVoice }),
+          body:    JSON.stringify({ text }),
         })
         if (!res.ok) throw new Error(`speak ${res.status}`)
         blob = await res.blob()
@@ -382,7 +382,7 @@ export default function useVoiceAssistant() {
       const amp = Math.sqrt(sum / samples.length)
 
       noiseFloor += (amp - noiseFloor) * (amp < noiseFloor ? 0.2 : 0.005)
-      const threshold = Math.max(VAD_MIN, noiseFloor * 2.5)
+      const threshold = Math.max(VAD_MIN, noiseFloor * 2.0)
 
       const now = Date.now()
       if (amp > threshold) {

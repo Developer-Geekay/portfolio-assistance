@@ -73,6 +73,16 @@ export default function Stage() {
   // Progress bar percentage — driven by real Whisper progress or a fake fill
   const [barPct, setBarPct] = useState(0)
 
+  const transcriptRef = useRef(null)
+  useEffect(() => {
+    if (transcriptRef.current) {
+      transcriptRef.current.scrollTo({
+        top: transcriptRef.current.scrollHeight,
+        behavior: 'smooth'
+      })
+    }
+  }, [transcript])
+
   const anyWasm = whisperMode === 'wasm' || piperMode === 'wasm'
 
   // Update bar percentage dynamically
@@ -179,7 +189,8 @@ export default function Stage() {
       canvas.height = Math.round(H * dpr)
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       cx = W / 2; cy = H / 2
-      R = Math.min(W, H) * 0.16
+      const isMobile = W < 600
+      R = Math.min(W, H) * (isMobile ? 0.23 : 0.16)
       dust = Array.from({ length: Math.floor((W * H) / 60000) }, () => ({
         x: Math.random() * W,
         y: Math.random() * H,
@@ -446,7 +457,7 @@ export default function Stage() {
         <p className="tagline" key={tagline.key}>{tagline.text}</p>
       )}
       {state !== 'idle' && (
-        <p className="transcript">{transcript || (state === 'listening' ? '· · ·' : '')}</p>
+        <p ref={transcriptRef} className="transcript">{transcript || (state === 'listening' ? '· · ·' : '')}</p>
       )}
 
       <div className={`loader${loaderDone ? ' done' : ''}`}>

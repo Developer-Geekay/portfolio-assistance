@@ -435,7 +435,12 @@ def speak(req: SpeakRequest):
     tts_voice = loaded_voices[voice_id]
     buf = io.BytesIO()
     with wave.open(buf, "wb") as f:
-        tts_voice.synthesize_wav(text, f)
+        tts_voice.synthesize_wav(
+            text,
+            f,
+            length_scale=1.18,      # Slow down to natural human pace
+            sentence_silence=0.45   # Natural pause duration between sentences
+        )
     return Response(content=buf.getvalue(), media_type="audio/wav")
 
 
@@ -560,6 +565,20 @@ async def update_settings(settings: SettingsUpdate, request: Request):
     set_setting("whisper_mode", settings.whisper_mode)
     set_setting("piper_mode", settings.piper_mode)
     set_setting("piper_voice", settings.piper_voice)
+    
+    # Preload the new voice dynamically so it's loaded in memory immediately
+    global loaded_voices
+    voice_id = settings.piper_voice
+    if voice_id not in loaded_voices:
+        onnx_path = f"models/tts/{voice_id}.onnx"
+        if os.path.exists(onnx_path):
+            try:
+                from piper import PiperVoice
+                loaded_voices[voice_id] = PiperVoice.load(onnx_path)
+                print(f"Dynamically loaded voice model on settings update: {voice_id}")
+            except Exception as e:
+                print(f"Failed to dynamically load voice {voice_id}: {e}")
+                
     return {"status": "ok"}
 
 
