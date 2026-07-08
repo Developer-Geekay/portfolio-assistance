@@ -420,6 +420,31 @@
   text-align: right;
 }
 
+/* Background TTS loading indicator — shown after stage is visible, bottom-right */
+.voice-bg-loading {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  z-index: 10;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(223, 230, 236, 0.30);
+  background: rgba(10, 13, 18, 0.55);
+  border: 1px solid rgba(223, 230, 236, 0.09);
+  padding: 5px 11px;
+  border-radius: 20px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: bgLoadingFade 1.8s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+@keyframes bgLoadingFade {
+  from { opacity: 0.6; }
+  to   { opacity: 1; }
+}
+
 @media (max-width: 600px) {
   .voice-selector-container {
     top: 16px;

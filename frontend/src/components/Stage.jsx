@@ -100,22 +100,19 @@ export default function Stage() {
     }
   }, [transcript])
 
-  const anyWasm = whisperMode === 'wasm' || piperMode === 'wasm'
+  // Only Whisper WASM blocks the loader — Piper WASM loads in background after stage is visible
+  const whisperWasm = whisperMode === 'wasm'
 
-  // Update bar percentage dynamically
+  // Update bar percentage dynamically (only for Whisper WASM gate)
   useEffect(() => {
-    if (!anyWasm) return
-    if (whisperMode === 'wasm' && !modelReady) {
-      setBarPct(modelProgress)
-    } else if (piperMode === 'wasm' && !piperReady) {
-      setBarPct(voiceDownloadProgress)
-    }
-  }, [modelReady, modelProgress, piperReady, voiceDownloadProgress, whisperMode, piperMode, anyWasm])
+    if (!whisperWasm) return
+    if (!modelReady) setBarPct(modelProgress)
+  }, [modelReady, modelProgress, whisperWasm])
 
-  // Dismiss loader once both models are ready (or immediately for no-WASM).
+  // Dismiss loader once Whisper is ready (or immediately for backend/no-WASM).
   useEffect(() => {
-    if (anyWasm) {
-      if (!modelReady || !piperReady) {
+    if (whisperWasm) {
+      if (!modelReady) {
         setLoaderDone(false)
         loaderDoneRef.current = false
         return
@@ -127,7 +124,7 @@ export default function Stage() {
       }, 400)
       return () => clearTimeout(t)
     } else {
-      // No WASM: fake loader for 1.0 s, then reveal ring
+      // Backend or no WASM: brief cosmetic loader then reveal ring
       setBarPct(96)
       const t = setTimeout(() => {
         setBarPct(100)
@@ -135,7 +132,7 @@ export default function Stage() {
       }, 1000)
       return () => clearTimeout(t)
     }
-  }, [modelReady, piperReady, anyWasm])
+  }, [modelReady, whisperWasm])
 
   // stage.ready class enables CSS transitions for .legend, .start, .hint
   useEffect(() => {
@@ -438,10 +435,7 @@ export default function Stage() {
     }
   }, [stateRef, analyserRef])
 
-  const isDownloadingVoice = piperMode === 'wasm' && !piperReady
-  const displayMsgText = isDownloadingVoice
-    ? `Downloading Voice Model (${selectedVoice})…`
-    : loaderMsg.text
+  const isLoadingVoiceBg = piperMode === 'wasm' && !piperReady && loaderDone
 
   return (
     <div className="stage" ref={stageRef}>
@@ -504,21 +498,26 @@ export default function Stage() {
       )}
 
       <div className={`loader${loaderDone ? ' done' : ''}`}>
-        <div className="loader-msg" key={isDownloadingVoice ? 'downloading' : loaderMsg.key}>
-          {displayMsgText}
+        <div className="loader-msg" key={loaderMsg.key}>
+          {loaderMsg.text}
         </div>
         <LoaderParticles />
         <div className="loader-bar-wrap">
           <div className="track">
             <div className="bar" style={{ width: `${barPct}%` }} />
           </div>
-          {anyWasm && (
+          {whisperWasm && (
             <span className="loader-pct">
               {loaderDone ? '✓' : barPct < 100 ? `${Math.round(barPct)}%` : ''}
             </span>
           )}
         </div>
       </div>
+      {isLoadingVoiceBg && (
+        <div className="voice-bg-loading">
+          voice {voiceDownloadProgress > 0 ? `${voiceDownloadProgress}%` : 'loading…'}
+        </div>
+      )}
     </div>
   )
 }

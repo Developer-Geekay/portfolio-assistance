@@ -210,6 +210,16 @@ export default function useVoiceAssistant() {
     try {
       let blob
       if (piperMode === 'wasm') {
+        // Wait for engine if it's still initializing (background load)
+        if (!isPiperReady(selectedVoice)) {
+          await new Promise((resolve, reject) => {
+            const deadline = Date.now() + 120_000
+            const iv = setInterval(() => {
+              if (isPiperReady(selectedVoice)) { clearInterval(iv); resolve() }
+              else if (Date.now() > deadline)  { clearInterval(iv); reject(new Error('Piper init timeout')) }
+            }, 500)
+          })
+        }
         const result = await piperGenerate(text, selectedVoice)
         blob = result.blob
       } else {
@@ -419,13 +429,13 @@ export default function useVoiceAssistant() {
   const toggle = useCallback(() => {
     if (stateRef.current === 'idle') {
       if (whisperMode === 'wasm' && !isWhisperReady()) return
-      if (piperMode === 'wasm' && !isPiperReady(selectedVoice)) return
+      // Piper still loading: let the user start listening; TTS will play once ready
       ensurePlayback()
       beginListening()
     } else {
       cancel()
     }
-  }, [ensurePlayback, beginListening, cancel, whisperMode, piperMode, selectedVoice])
+  }, [ensurePlayback, beginListening, cancel, whisperMode])
 
   return {
     state,

@@ -435,12 +435,16 @@ def speak(req: SpeakRequest):
     tts_voice = loaded_voices[voice_id]
     buf = io.BytesIO()
     with wave.open(buf, "wb") as f:
-        tts_voice.synthesize_wav(
-            text,
-            f,
-            length_scale=1.18,      # Slow down to natural human pace
-            sentence_silence=0.45   # Natural pause duration between sentences
-        )
+        try:
+            from piper.config import SynthesisConfig
+            syn_config = SynthesisConfig(length_scale=1.18)
+        except Exception:
+            syn_config = None
+        tts_voice.synthesize_wav(text, f, syn_config=syn_config)
+        # Append silence frames for natural sentence pause
+        sample_rate = tts_voice.config.sample_rate
+        silence_frames = int(sample_rate * 0.45)
+        f.writeframes(b"\x00\x00" * silence_frames)
     return Response(content=buf.getvalue(), media_type="audio/wav")
 
 
