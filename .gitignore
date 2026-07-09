@@ -12,6 +12,7 @@ __pycache__/
 # runtime data
 backend/*.db
 *.db
+
 # service runtime + bundle output
 backend/build/*.log
 backend/build/*.pid
@@ -20,6 +21,7 @@ backend/build/dist/
 # personal knowledge base stays on this machine — only the sample is tracked
 backend/knowledge_base.json
 backend/index/
+backend/training_data/*
 
 # large model binaries (downloaded per DEPLOYMENT.md)
 backend/models/generator/*
