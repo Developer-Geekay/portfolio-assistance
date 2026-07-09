@@ -82,11 +82,7 @@ def save_and_rebuild(kb: list):
     with open(KB_PATH, "w") as f:
         json.dump(kb, f, indent=2)
     print("\n  Saving knowledge base...")
-    result = subprocess.run([sys.executable, "build_index.py"], capture_output=True, text=True)
-    if result.returncode == 0:
-        print(f"  KB index rebuilt. Total facts: {len(kb)}")
-    else:
-        print(f"  KB index rebuild failed:\n{result.stderr}")
+    print(f"  Saved. Total facts: {len(kb)}")
     # Rebuild Q&A index if training data is present
     if Path("training_data").exists() and list(Path("training_data").glob("*.json")):
         qa_result = subprocess.run([sys.executable, "build_qa_index.py"], capture_output=True, text=True)
