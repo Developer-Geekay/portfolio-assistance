@@ -342,23 +342,8 @@ async def ask(q: Question, request: Request):
         )
         conn.commit()
         
-        try:
-            with open("knowledge_base.json", "r+") as f:
-                kb = json.load(f)
-                new_id = f"kb_{len(kb)+1:03d}"
-                kb.append({
-                    "id": new_id,
-                    "topic": "unknown_queries",
-                    "fact": f"Regarding the query '{original_q}', the visitor specified they wanted: '{q.text}'."
-                })
-                f.seek(0)
-                json.dump(kb, f, indent=2)
-                f.truncate()
-            import subprocess
-            subprocess.run([sys.executable, "build_index.py"], capture_output=True)
-            engine.reload_kb()
-        except Exception as e:
-            print(f"Error updating knowledge base: {e}")
+        # Visitor clarification is already saved to the queries table above.
+        # Do not write to knowledge_base.json — that is managed through the admin KB panel.
 
         polite_ack = (
             "Thank you! I have saved what you want to know and your contact details (if provided). "
