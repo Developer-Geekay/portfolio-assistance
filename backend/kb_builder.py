@@ -84,9 +84,16 @@ def save_and_rebuild(kb: list):
     print("\n  Saving knowledge base...")
     result = subprocess.run([sys.executable, "build_index.py"], capture_output=True, text=True)
     if result.returncode == 0:
-        print(f"  Index rebuilt. Total facts: {len(kb)}")
+        print(f"  KB index rebuilt. Total facts: {len(kb)}")
     else:
-        print(f"  Index rebuild failed:\n{result.stderr}")
+        print(f"  KB index rebuild failed:\n{result.stderr}")
+    # Rebuild Q&A index if training data is present
+    if Path("training_data").exists() and list(Path("training_data").glob("*.json")):
+        qa_result = subprocess.run([sys.executable, "build_qa_index.py"], capture_output=True, text=True)
+        if qa_result.returncode == 0:
+            print("  Q&A index rebuilt.")
+        else:
+            print(f"  Q&A index rebuild failed:\n{qa_result.stderr}")
 
 
 # ── UI helpers ────────────────────────────────────────────────────────────────

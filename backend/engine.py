@@ -1,15 +1,17 @@
 # engine.py — full-context inference engine (shared by chat and API)
 import json
 import os
+import random
 import re
 
 from gpu_dlls import register_cuda_dlls
 register_cuda_dlls()   # before llama_cpp import — llama.dll resolves CUDA DLLs at load
 from llama_cpp import Llama
 
-MODEL_PATH = os.environ.get("LLM_MODEL", "models/generator/gemma-4-e2b-it-qat-q4.gguf")
-KB_PATH    = os.environ.get("KB_PATH", "knowledge_base.json")
-N_THREADS  = int(os.environ.get("LLM_THREADS", "4"))
+MODEL_PATH   = os.environ.get("LLM_MODEL", "models/generator/gemma-4-e2b-it-qat-q4.gguf")
+KB_PATH      = os.environ.get("KB_PATH", "knowledge_base.json")
+QA_INDEX     = os.environ.get("QA_INDEX", "index/qa_flows.json")
+N_THREADS    = int(os.environ.get("LLM_THREADS", "4"))
 # 0 = CPU only, -1 = offload all layers to GPU (CUDA/Metal), N = partial offload.
 # Safe on CPU-only installs: llama.cpp ignores it when no GPU backend is built in.
 N_GPU_LAYERS = int(os.environ.get("LLM_GPU_LAYERS", "0"))
@@ -20,6 +22,63 @@ SHORT_NAME = os.environ.get("PERSONA_NAME", "Gokul")
 
 llm: Llama | None = None
 _system_prompt: str = ""
+
+# ── Q&A retriever ─────────────────────────────────────────────────────────────
+
+_qa_by_category: dict[str, list] = {}
+
+# Maps query keywords (lowercase substrings) → training data category names.
+# Use root forms so plurals and inflections match ("compan" → company/companies).
+_CAT_KEYWORDS: list[tuple[str, list[str]]] = [
+    ("outsystems",         ["outsystems", "odc", "o11", "service studio", "reactive web"]),
+    ("architecture",       ["architect", "system design", "microservice", "scalab", "monolith", "design pattern", "best practice", "clean code", "refactor"]),
+    ("ai",                 ["ai ", "artificial intelligence", "machine learning", "llm", "neural", "chatgpt", "nlp"]),
+    ("security",           ["security", "oauth", "ssl", "https", "xss", "csrf", "encrypt", "vulnerab"]),
+    ("projects",           ["project", "portfolio", "built", "developed", "created", "side project"]),
+    ("career",             ["career", "experience", "job", "compan", "role", "position", "employer", "years of", "work history", "background"]),
+    ("developer_tools",    ["git", "ci/cd", "docker", "container", "linux", "bash", "npm", "ide", "vscode", "tooling"]),
+    ("lead_collection",    ["contact", "hire", "connect", "email", "reach", "freelance", "consulting", "discuss"]),
+    ("small_talk",         ["hobbi", "interest", "outside work", "weekend", "fun fact", "free time", "passion"]),
+    ("technical",          ["code", "programm", "software", "algorithm", "debug", "testing", "deployment", "api", "language"]),
+    ("mixed",              []),  # fallback
+]
+
+def _load_qa_index() -> None:
+    global _qa_by_category
+    if not os.path.exists(QA_INDEX):
+        return
+    with open(QA_INDEX) as f:
+        data = json.load(f)
+    _qa_by_category = data.get("by_category", {})
+    print(f"Q&A index loaded: {data.get('total', 0)} flows, {len(_qa_by_category)} categories")
+
+def _detect_category(question: str) -> str:
+    q = question.lower()
+    for cat, keywords in _CAT_KEYWORDS:
+        if any(kw in q for kw in keywords):
+            return cat
+    return "mixed"
+
+def _get_qa_examples(question: str, n: int = 3) -> str:
+    """Returns a compact few-shot block of n Q&A examples relevant to the question."""
+    if not _qa_by_category:
+        return ""
+    cat = _detect_category(question)
+    pool = _qa_by_category.get(cat) or _qa_by_category.get("mixed") or []
+    if not pool:
+        # Flatten all flows as last resort
+        pool = [f for flows in _qa_by_category.values() for f in flows]
+    sample = random.sample(pool, min(n, len(pool)))
+    lines = []
+    for flow in sample:
+        msgs = flow.get("messages", [])
+        if len(msgs) >= 2:
+            q_text = msgs[0]["content"].strip()
+            a_text = msgs[1]["content"].strip()
+            lines.append(f"Q: {q_text}\nA: {a_text}")
+    if not lines:
+        return ""
+    return "\n\nEXAMPLE RESPONSES (style reference only — do not copy):\n" + "\n\n".join(lines)
 
 def _build_system_prompt() -> str:
     with open(KB_PATH) as f:
@@ -241,6 +300,7 @@ def _build_system_prompt() -> str:
 def load_model():
     global llm, _system_prompt
     _system_prompt = _build_system_prompt()
+    _load_qa_index()
     print("Loading model...")
     if N_GPU_LAYERS != 0:
         try:
@@ -268,21 +328,24 @@ def load_model():
 def reload_kb():
     global _system_prompt
     _system_prompt = _build_system_prompt()
+    _load_qa_index()
 
 
 def ask(question: str, history: list | None = None) -> str:
     recent = (history or [])[-3:]
+    examples = _get_qa_examples(question)
+    first_turn_suffix = examples + "\n\nQuestion: "
     messages = []
 
     if recent:
-        messages.append({"role": "user",      "content": _system_prompt + "\n\nQuestion: " + recent[0]["q"]})
+        messages.append({"role": "user",      "content": _system_prompt + first_turn_suffix + recent[0]["q"]})
         messages.append({"role": "assistant", "content": recent[0]["a"]})
         for turn in recent[1:]:
             messages.append({"role": "user",      "content": turn["q"]})
             messages.append({"role": "assistant", "content": turn["a"]})
         messages.append({"role": "user", "content": question})
     else:
-        messages.append({"role": "user", "content": _system_prompt + "\n\nQuestion: " + question})
+        messages.append({"role": "user", "content": _system_prompt + first_turn_suffix + question})
 
     response = llm.create_chat_completion(
         messages=messages,
