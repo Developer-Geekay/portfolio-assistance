@@ -457,6 +457,68 @@ async def facts(n: int = 15):
     return [p["fact"] for p in picks]
 
 
+# ── Knowledge base management ─────────────────────────────────────────────────
+
+class KBEntry(BaseModel):
+    id: str = ""
+    topic: str
+    fact: str
+
+
+@app.get("/kb")
+async def get_kb(request: Request):
+    """Return all knowledge base entries."""
+    require_admin(request)
+    with open("knowledge_base.json") as f:
+        return json.load(f)
+
+
+@app.post("/kb")
+async def upsert_kb(entry: KBEntry, request: Request):
+    """Upsert a KB entry by id. Hot-reloads the engine immediately."""
+    require_admin(request)
+    entry.topic = entry.topic.strip().lower().replace(" ", "_")
+    entry.fact  = entry.fact.strip()
+    if not entry.topic or not entry.fact:
+        raise HTTPException(status_code=422, detail="topic and fact are required")
+
+    with open("knowledge_base.json") as f:
+        kb = json.load(f)
+
+    if not entry.id:
+        nums = [int(e["id"].split("_")[1]) for e in kb if e["id"].startswith("kb_") and e["id"].split("_")[1].isdigit()]
+        entry.id = f"kb_{(max(nums, default=0) + 1):03d}"
+
+    idx = next((i for i, e in enumerate(kb) if e["id"] == entry.id), None)
+    if idx is not None:
+        kb[idx] = {"id": entry.id, "topic": entry.topic, "fact": entry.fact}
+        action = "updated"
+    else:
+        kb.append({"id": entry.id, "topic": entry.topic, "fact": entry.fact})
+        action = "added"
+
+    with open("knowledge_base.json", "w") as f:
+        json.dump(kb, f, indent=2)
+
+    engine.reload_kb()
+    return {"ok": True, "id": entry.id, "action": action, "total": len(kb)}
+
+
+@app.delete("/kb/{kb_id}")
+async def delete_kb(kb_id: str, request: Request):
+    """Delete a KB entry by id. Hot-reloads the engine immediately."""
+    require_admin(request)
+    with open("knowledge_base.json") as f:
+        kb = json.load(f)
+    filtered = [e for e in kb if e["id"] != kb_id]
+    if len(filtered) == len(kb):
+        raise HTTPException(status_code=404, detail="Entry not found")
+    with open("knowledge_base.json", "w") as f:
+        json.dump(filtered, f, indent=2)
+    engine.reload_kb()
+    return {"ok": True, "total": len(filtered)}
+
+
 @app.get("/conversations")
 async def get_conversations(request: Request, limit: int = 200):
     require_admin(request)

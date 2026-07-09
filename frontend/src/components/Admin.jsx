@@ -18,6 +18,7 @@ const TABS = [
   { id: 'conversations', label: 'Conversations' },
   { id: 'unknown',       label: 'Unanswered' },
   { id: 'activity',      label: 'Activity' },
+  { id: 'knowledge',     label: 'Knowledge' },
   { id: 'settings',      label: 'Settings' },
 ]
 
@@ -124,6 +125,7 @@ export default function Admin() {
           {tab === 'conversations' && <Conversations rows={data.conversations} />}
           {tab === 'unknown'       && <Unknown rows={data.unknown} />}
           {tab === 'activity'      && <Activity stats={data.stats} />}
+          {tab === 'knowledge'     && <Knowledge adminKey={key} />}
           {tab === 'settings'      && <Settings adminKey={key} />}
         </div>
       </div>
@@ -251,6 +253,212 @@ function Activity({ stats }) {
         </tbody>
       </table>
     </>
+  )
+}
+
+// ── Knowledge base manager ────────────────────────────────────────────────────
+
+const BLANK = { id: '', topic: '', fact: '' }
+
+function Knowledge({ adminKey }) {
+  const [entries, setEntries]     = useState([])
+  const [loading, setLoading]     = useState(true)
+  const [activeTopic, setActive]  = useState('all')
+  const [form, setForm]           = useState(BLANK)
+  const [editing, setEditing]     = useState(false)   // true = edit mode
+  const [busy, setBusy]           = useState(false)
+  const [msg, setMsg]             = useState(null)    // { text, ok }
+  const [deleteId, setDeleteId]   = useState(null)    // id pending confirm
+
+  const headers = { 'X-Admin-Key': adminKey, 'Content-Type': 'application/json' }
+
+  const loadKb = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/kb`, { headers })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setEntries(data)
+    } catch (e) {
+      setMsg({ text: e.message, ok: false })
+    }
+    setLoading(false)
+  }, [adminKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { loadKb() }, [loadKb])
+
+  const topics = ['all', ...Array.from(new Set(entries.map(e => e.topic))).sort()]
+  const visible = activeTopic === 'all' ? entries : entries.filter(e => e.topic === activeTopic)
+
+  const flash = (text, ok = true) => {
+    setMsg({ text, ok })
+    setTimeout(() => setMsg(null), 3500)
+  }
+
+  const openAdd = () => {
+    setForm({ ...BLANK, topic: activeTopic === 'all' ? '' : activeTopic })
+    setEditing(false)
+  }
+
+  const openEdit = (entry) => {
+    setForm({ id: entry.id, topic: entry.topic, fact: entry.fact })
+    setEditing(true)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const cancelForm = () => setForm(BLANK)
+
+  const save = async () => {
+    if (!form.topic.trim() || !form.fact.trim()) {
+      flash('Topic and fact are required.', false)
+      return
+    }
+    setBusy(true)
+    try {
+      const res = await fetch(`${API_BASE}/kb`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(form),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      flash(`${data.action === 'updated' ? 'Updated' : 'Added'} — engine reloaded (${data.total} facts)`)
+      setForm(BLANK)
+      await loadKb()
+    } catch (e) {
+      flash(e.message, false)
+    }
+    setBusy(false)
+  }
+
+  const confirmDelete = async (id) => {
+    if (deleteId !== id) { setDeleteId(id); return }
+    setBusy(true)
+    setDeleteId(null)
+    try {
+      const res = await fetch(`${API_BASE}/kb/${encodeURIComponent(id)}`, { method: 'DELETE', headers })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      flash(`Deleted — engine reloaded (${data.total} facts)`)
+      if (form.id === id) setForm(BLANK)
+      await loadKb()
+    } catch (e) {
+      flash(e.message, false)
+    }
+    setBusy(false)
+  }
+
+  const isFormOpen = form.topic !== '' || form.fact !== '' || form.id !== ''
+
+  return (
+    <div className="kb-manager">
+
+      {/* ── top bar ── */}
+      <div className="kb-topbar">
+        <div className="kb-title-row">
+          <h2>Knowledge Base</h2>
+          <span className="kb-count">{entries.length} facts</span>
+        </div>
+        {msg && <p className={`kb-msg${msg.ok ? '' : ' kb-msg-err'}`}>{msg.text}</p>}
+      </div>
+
+      {/* ── add / edit form ── */}
+      <div className={`kb-form-wrap${isFormOpen ? ' open' : ''}`}>
+        <div className="kb-form-header">
+          <span>{editing ? `Editing ${form.id}` : 'New entry'}</span>
+          {isFormOpen && <button className="kb-cancel" onClick={cancelForm}>✕</button>}
+        </div>
+        <div className="kb-form-fields">
+          <div className="kb-field-row">
+            <div className="kb-field">
+              <label>ID <span className="kb-optional">(leave blank to auto-generate)</span></label>
+              <input
+                value={form.id}
+                onChange={e => setForm(f => ({ ...f, id: e.target.value }))}
+                placeholder="kb_001"
+                disabled={editing}
+              />
+            </div>
+            <div className="kb-field">
+              <label>Topic / Category</label>
+              <input
+                list="kb-topics-list"
+                value={form.topic}
+                onChange={e => setForm(f => ({ ...f, topic: e.target.value }))}
+                placeholder="career, projects, skills…"
+              />
+              <datalist id="kb-topics-list">
+                {topics.filter(t => t !== 'all').map(t => <option key={t} value={t} />)}
+              </datalist>
+            </div>
+          </div>
+          <div className="kb-field">
+            <label>Fact</label>
+            <textarea
+              value={form.fact}
+              onChange={e => setForm(f => ({ ...f, fact: e.target.value }))}
+              placeholder="Write the factual statement in third-person…"
+              rows={3}
+            />
+          </div>
+          <div className="kb-form-actions">
+            <button className="primary" onClick={save} disabled={busy || !form.topic || !form.fact}>
+              {busy ? 'Saving…' : editing ? 'Update entry' : 'Add entry'}
+            </button>
+            {isFormOpen && <button className="kb-btn-secondary" onClick={cancelForm}>Cancel</button>}
+          </div>
+        </div>
+      </div>
+
+      {/* ── topic filter tabs ── */}
+      <div className="kb-topic-tabs">
+        {topics.map(t => (
+          <button
+            key={t}
+            className={`kb-topic-tab${activeTopic === t ? ' active' : ''}`}
+            onClick={() => setActive(t)}
+          >
+            {t === 'all' ? 'All' : t}
+            <span className="kb-topic-count">
+              {t === 'all' ? entries.length : entries.filter(e => e.topic === t).length}
+            </span>
+          </button>
+        ))}
+        {!isFormOpen && (
+          <button className="kb-add-btn" onClick={openAdd}>+ Add</button>
+        )}
+      </div>
+
+      {/* ── entries list ── */}
+      {loading ? (
+        <div className="admin-empty">Loading…</div>
+      ) : visible.length === 0 ? (
+        <div className="admin-empty">No entries in this topic.</div>
+      ) : (
+        <div className="kb-list">
+          {visible.map(entry => (
+            <div key={entry.id} className={`kb-row${form.id === entry.id ? ' kb-row-active' : ''}`}>
+              <div className="kb-row-meta">
+                <span className={`pill ${entry.topic}`}>{entry.topic}</span>
+                <span className="kb-row-id">{entry.id}</span>
+              </div>
+              <p className="kb-row-fact">{entry.fact}</p>
+              <div className="kb-row-actions">
+                <button className="kb-edit-btn" onClick={() => openEdit(entry)}>Edit</button>
+                <button
+                  className={`kb-del-btn${deleteId === entry.id ? ' confirm' : ''}`}
+                  onClick={() => confirmDelete(entry.id)}
+                  onBlur={() => setDeleteId(null)}
+                  disabled={busy}
+                >
+                  {deleteId === entry.id ? 'Confirm delete' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
