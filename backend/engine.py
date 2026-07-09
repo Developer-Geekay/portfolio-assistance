@@ -30,17 +30,20 @@ _qa_by_category: dict[str, list] = {}
 # Maps query keywords (lowercase substrings) → training data category names.
 # Use root forms so plurals and inflections match ("compan" → company/companies).
 _CAT_KEYWORDS: list[tuple[str, list[str]]] = [
-    ("outsystems",         ["outsystems", "odc", "o11", "service studio", "reactive web"]),
-    ("architecture",       ["architect", "system design", "microservice", "scalab", "monolith", "design pattern", "best practice", "clean code", "refactor"]),
-    ("ai",                 ["ai ", "artificial intelligence", "machine learning", "llm", "neural", "chatgpt", "nlp"]),
-    ("security",           ["security", "oauth", "ssl", "https", "xss", "csrf", "encrypt", "vulnerab"]),
-    ("projects",           ["project", "portfolio", "built", "developed", "created", "side project"]),
-    ("career",             ["career", "experience", "job", "compan", "role", "position", "employer", "years of", "work history", "background"]),
-    ("developer_tools",    ["git", "ci/cd", "docker", "container", "linux", "bash", "npm", "ide", "vscode", "tooling"]),
-    ("lead_collection",    ["contact", "hire", "connect", "email", "reach", "freelance", "consulting", "discuss"]),
-    ("small_talk",         ["hobbi", "interest", "outside work", "weekend", "fun fact", "free time", "passion"]),
-    ("technical",          ["code", "programm", "software", "algorithm", "debug", "testing", "deployment", "api", "language"]),
-    ("mixed",              []),  # fallback
+    ("outsystems",          ["outsystems", "odc", "o11", "service studio", "reactive web"]),
+    ("architecture",        ["architect", "system design", "microservice", "scalab", "monolith", "design pattern", "best practice", "clean code", "refactor"]),
+    ("ai",                  ["ai ", "artificial intelligence", "machine learning", "llm", "neural", "chatgpt", "nlp"]),
+    ("security",            ["security", "oauth", "ssl", "https", "xss", "csrf", "encrypt", "vulnerab"]),
+    ("projects",            ["project", "portfolio", "built", "developed", "created", "side project"]),
+    ("career",              ["career", "experience", "job", "compan", "role", "position", "employer", "years of", "work history", "background"]),
+    ("developer_tools",     ["git", "ci/cd", "docker", "container", "linux", "bash", "npm", "ide", "vscode", "tooling"]),
+    ("lead_collection",     ["contact", "hire", "connect", "email", "reach", "freelance", "consulting", "discuss"]),
+    ("small_talk",          ["hobbi", "interest", "outside work", "weekend", "fun fact", "free time", "passion"]),
+    ("personal_questions",  ["married", "single", "girlfriend", "boyfriend", "wife", "husband", "age", "how old",
+                              "born", "birthday", "religion", "family", "kids", "children", "salary", "earn",
+                              "net worth", "wealth", "personal life", "private"]),
+    ("technical",           ["code", "programm", "software", "algorithm", "debug", "testing", "deployment", "api", "language"]),
+    ("mixed",               []),  # fallback
 ]
 
 def _load_qa_index() -> None:

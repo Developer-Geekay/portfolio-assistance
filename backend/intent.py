@@ -42,9 +42,12 @@ SELF_INTRO = {"who are you", "what are you", "who are you?", "what are you?",
 # visitors are pointed to Gokul directly. Hobbies/entertainment stay answerable.
 PERSONAL_PATTERN = re.compile(
     # private life
-    r"\b(married|marriage|wife|spouse|girlfriend|dating|relationship|"
-    r"kids|children|family|parents|father|mother|brother|sister|relatives|"
-    r"age|how old|religion|caste|phone number|home address|personal life|"
+    r"\b(married|marriage|wife|spouse|girlfriend|boyfriend|dating|relationship|"
+    r"single|divorced|engaged|kids|children|child|son|daughter|"
+    r"family|parents|father|mother|brother|sister|sibling\w*|relatives|"
+    r"age|how old|born|birth(day|date)?|religion|caste|"
+    r"phone number|home address|personal life|personal email|"
+    r"net worth|wealth\w*|wealthy|rich|financially|"
     # career negotiations & availability
     r"salary|income|earn(s|ing)?|ctc|compensation|pay package|"
     r"notice period|driving licen[cs]e|negotiat\w*|relocat\w*|"
