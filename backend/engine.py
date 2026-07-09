@@ -27,23 +27,54 @@ _system_prompt: str = ""
 
 _qa_by_category: dict[str, list] = {}
 
-# Maps query keywords (lowercase substrings) → training data category names.
-# Use root forms so plurals and inflections match ("compan" → company/companies).
+# Each entry: (category, [patterns]).  Patterns are matched as whole-word regex
+# so "age" won't fire inside "languages" or "manage".
 _CAT_KEYWORDS: list[tuple[str, list[str]]] = [
-    ("outsystems",          ["outsystems", "odc", "o11", "service studio", "reactive web"]),
-    ("architecture",        ["architect", "system design", "microservice", "scalab", "monolith", "design pattern", "best practice", "clean code", "refactor"]),
-    ("ai",                  ["ai ", "artificial intelligence", "machine learning", "llm", "neural", "chatgpt", "nlp"]),
-    ("security",            ["security", "oauth", "ssl", "https", "xss", "csrf", "encrypt", "vulnerab"]),
-    ("projects",            ["project", "portfolio", "built", "developed", "created", "side project"]),
-    ("career",              ["career", "experience", "job", "compan", "role", "position", "employer", "years of", "work history", "background"]),
-    ("developer_tools",     ["git", "ci/cd", "docker", "container", "linux", "bash", "npm", "ide", "vscode", "tooling"]),
-    ("lead_collection",     ["contact", "hire", "connect", "email", "reach", "freelance", "consulting", "discuss"]),
-    ("small_talk",          ["hobbi", "interest", "outside work", "weekend", "fun fact", "free time", "passion"]),
-    ("personal_questions",  ["married", "single", "girlfriend", "boyfriend", "wife", "husband", "age", "how old",
-                              "born", "birthday", "religion", "family", "kids", "children", "salary", "earn",
-                              "net worth", "wealth", "personal life", "private"]),
-    ("technical",           ["code", "programm", "software", "algorithm", "debug", "testing", "deployment", "api", "language"]),
+    ("outsystems",          ["outsystems", "odc", r"o11\b", "service studio", "reactive web",
+                              "certification", "certified", "cert"]),
+    ("architecture",        ["architect", "system design", "microservice", "scalab", "monolith",
+                              "design pattern", "best practice", "clean code", "refactor"]),
+    ("ai",                  [r"\bai\b", "artificial intelligence", "machine learning", "llm",
+                              "neural", "chatgpt", "nlp", "generative"]),
+    ("security",            ["security", "oauth", r"\bssl\b", r"\bxss\b", r"\bcsrf\b",
+                              "encrypt", "vulnerab"]),
+    ("projects",            ["project", "built", "developed", "created", "side project",
+                              "chrome extension", "hostpanel", "devtools"]),
+    ("education",           [r"\bdegree\b", r"\bstud", r"\bmca\b",
+                              "bachelor", "university", "college", "education",
+                              "qualification", "academic"]),
+    ("career",              ["career", "experience", "companies", "worked at", "compan",
+                              r"\bjob\b", "role", "position", "employer", "years of",
+                              "work history", "background", "industr", "sector"]),
+    ("developer_tools",     [r"\bgit\b", "ci/cd", "docker", "container",
+                              r"\blinux\b", r"\bbash\b", r"\bnpm\b", r"\bide\b",
+                              "vscode", "tooling", "pipeline"]),
+    ("lead_collection",     ["contact", r"\bhire\b", "connect", r"\bemail\b", "reach",
+                              "freelance", "consulting", "discuss"]),
+    ("small_talk",          ["hobbi", "outside work", "weekend", "fun fact",
+                              "free time", "passion", "enjoy", "travel", "gaming",
+                              r"\bgame\b", "gaming"]),
+    ("technical",           ["tech stack", "tech", "framework", "react", "angular",
+                              "typescript", r"\bnode\b", r"\bsql\b", "mysql", "mongodb",
+                              "database", r"\bphp\b", "python", "javascript",
+                              "programm", "software", "algorithm", "debug",
+                              r"\bcode\b", "testing", "deployment", r"\bapi\b",
+                              "language"]),
+    ("portfolio",           [r"\bwho is\b", "tell me about him", "introduce",
+                              "full name", "summary", "overview", "about gokul",
+                              "about him", "who are we talking"]),
+    ("personal_questions",  [r"\bmarried\b", r"\bsingle\b", "girlfriend", "boyfriend",
+                              r"\bwife\b", "husband", r"\bage\b", "how old",
+                              r"\bborn\b", "birthday", "religion", r"\bfamily\b",
+                              r"\bkids\b", "children", r"\bsalary\b", r"\bearn\b",
+                              "net worth", "wealth", "personal life", r"\bprivate\b"]),
     ("mixed",               []),  # fallback
+]
+
+# Pre-compile all patterns for efficiency
+_CAT_PATTERNS: list[tuple[str, list[re.Pattern]]] = [
+    (cat, [re.compile(kw, re.I) for kw in kws])
+    for cat, kws in _CAT_KEYWORDS
 ]
 
 def _load_qa_index() -> None:
@@ -56,9 +87,8 @@ def _load_qa_index() -> None:
     print(f"Q&A index loaded: {data.get('total', 0)} flows, {len(_qa_by_category)} categories")
 
 def _detect_category(question: str) -> str:
-    q = question.lower()
-    for cat, keywords in _CAT_KEYWORDS:
-        if any(kw in q for kw in keywords):
+    for cat, patterns in _CAT_PATTERNS:
+        if any(p.search(question) for p in patterns):
             return cat
     return "mixed"
 
@@ -67,7 +97,14 @@ def _get_qa_examples(question: str, n: int = 3) -> str:
     if not _qa_by_category:
         return ""
     cat = _detect_category(question)
-    pool = _qa_by_category.get(cat) or _qa_by_category.get("mixed") or []
+    pool = _qa_by_category.get(cat)
+    if not pool:
+        # Merge mixed + unknown_questions for the fallback pool so out-of-scope
+        # queries get graceful deflection examples alongside general ones.
+        pool = (
+            (_qa_by_category.get("mixed") or []) +
+            (_qa_by_category.get("unknown_questions") or [])
+        )
     if not pool:
         pool = [f for flows in _qa_by_category.values() for f in flows]
     sample = random.sample(pool, min(n, len(pool)))
