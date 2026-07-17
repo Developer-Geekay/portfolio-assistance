@@ -6,10 +6,10 @@ import { USE_WHISPER_WASM, USE_PIPER_WASM } from '../features'
 // vite dev proxy / nginx → FastAPI; override with VITE_API_BASE when mounted
 // inside another site whose /api is taken (e.g. /assistance-api in a portfolio)
 const API_BASE       = import.meta.env.VITE_API_BASE || '/api'
-const SILENCE_MS     = 2500     // pause after speech → user finished talking
+const SILENCE_MS     = 1400     // pause after speech → user finished talking
 const NO_SPEECH_MS   = 10000    // never spoke at all → give up, back to idle
 const POST_ANSWER_MS = 8000     // quiet after an answer → say goodbye, go idle
-const VAD_MIN        = 0.015    // absolute floor for the adaptive speech threshold
+const VAD_MIN        = 0.008    // absolute floor for the adaptive speech threshold
 const FAREWELL       = "Thank you! Glad to help — feel free to ask anytime."
 
 // Turns made only of these are mic noise / self-talk — never sent to the brain
@@ -358,7 +358,11 @@ export default function useVoiceAssistant() {
 
     let stream
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // autoGainControl lifts quiet voices; the others cut ambient noise so
+      // the adaptive floor stays low and soft speech clears the threshold
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      })
     } catch {
       setBoth('idle')
       return
@@ -368,7 +372,9 @@ export default function useVoiceAssistant() {
     const ctx = new (window.AudioContext || window.webkitAudioContext)()
     micCtxRef.current = ctx
     const analyser = ctx.createAnalyser()
-    analyser.fftSize = 256
+    // 2048 samples ≈ 43ms of audio per RMS reading — 256 (~5ms) often lands
+    // between syllables and misses quiet speech entirely
+    analyser.fftSize = 2048
     ctx.createMediaStreamSource(stream).connect(analyser)
     analyserRef.current = analyser
 
@@ -380,7 +386,10 @@ export default function useVoiceAssistant() {
     setBoth('listening')
 
     const samples = new Uint8Array(analyser.fftSize)
-    let noiseFloor = 0.05
+    // Start the floor low and let ambient noise raise it — starting high
+    // (0.05 → threshold 0.1) meant soft speech never crossed until the
+    // floor had decayed, which is why quiet users weren't heard at first
+    let noiseFloor = 0.01
     let loudStreak = 0
     vadTimerRef.current = setInterval(() => {
       analyser.getByteTimeDomainData(samples)
@@ -392,12 +401,12 @@ export default function useVoiceAssistant() {
       const amp = Math.sqrt(sum / samples.length)
 
       noiseFloor += (amp - noiseFloor) * (amp < noiseFloor ? 0.2 : 0.005)
-      const threshold = Math.max(VAD_MIN, noiseFloor * 2.0)
+      const threshold = Math.max(VAD_MIN, noiseFloor * 1.6)
 
       const now = Date.now()
       if (amp > threshold) {
         loudStreak += 1
-        if (loudStreak >= 3) {
+        if (loudStreak >= 2) {
           heardRef.current   = true
           spokeAtRef.current = now
         }
