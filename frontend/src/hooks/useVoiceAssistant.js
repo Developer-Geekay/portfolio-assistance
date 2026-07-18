@@ -44,6 +44,9 @@ function pickRecordingFormat() {
 export default function useVoiceAssistant() {
   const [state, setState]           = useState('idle')
   const [transcript, setTranscript] = useState('')
+  // Full answer string exposed for response-cue overlays (cert bubbles /
+  // contact card). id increments so repeated identical answers still trigger.
+  const [answer, setAnswer]         = useState({ text: '', id: 0 })
   
   // Settings and mode states
   const [whisperMode, setWhisperMode] = useState('backend') // 'wasm' | 'backend'
@@ -206,6 +209,9 @@ export default function useVoiceAssistant() {
 
   const speak = useCallback(async (text, resumeAfter = true) => {
     setBoth('processing')
+    // surface the full answer for response-cue overlays (before word-by-word
+    // transcript animation begins)
+    if (text) setAnswer((a) => ({ text, id: a.id + 1 }))
     let syncIv
     try {
       let blob
@@ -450,6 +456,7 @@ export default function useVoiceAssistant() {
     state,
     stateRef,
     transcript,
+    answer,
     toggle,
     analyserRef,
     modelReady,

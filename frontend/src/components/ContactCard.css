@@ -1,0 +1,118 @@
+.contact-card {
+  position: absolute;
+  right: 24px;
+  bottom: 96px;
+  z-index: 6;
+  width: 268px;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(14, 18, 24, 0.82);
+  border: 1px solid rgba(223, 230, 236, 0.16);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  animation: contactReveal 0.4s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+.contact-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 10px;
+}
+
+.contact-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 8px #4ade80;
+}
+
+.contact-title {
+  font-family: 'Michroma', sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--white);
+}
+
+.contact-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--dim);
+  font-size: 13px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 2px 4px;
+  transition: color 0.2s ease;
+}
+.contact-close:hover { color: var(--white); }
+
+.contact-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  text-decoration: none;
+  color: var(--white);
+  transition: background 0.18s ease;
+}
+.contact-row:hover { background: rgba(223, 230, 236, 0.07); }
+
+.contact-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(223, 230, 236, 0.7);
+  flex-shrink: 0;
+}
+
+.contact-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.contact-label {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.contact-value {
+  font-size: 12px;
+  color: rgba(223, 230, 236, 0.9);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contact-arrow {
+  margin-left: auto;
+  color: var(--dim);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+@keyframes contactReveal {
+  from { opacity: 0; transform: translateY(16px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 600px) {
+  .contact-card {
+    right: 12px;
+    left: 12px;
+    width: auto;
+    bottom: 88px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .contact-card { animation: contactFade 0.3s ease both; }
+  @keyframes contactFade { from { opacity: 0; } to { opacity: 1; } }
+}

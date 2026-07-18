@@ -90,7 +90,8 @@ export default defineConfig(({ mode }) => {
     base: env.VITE_BASE || '/',
     plugins: [
       react(),
-      basicSsl(),
+      // VITE_NO_SSL=1 serves plain HTTP for local automated testing
+      ...(env.VITE_NO_SSL === '1' ? [] : [basicSsl()]),
       // Dev: serve Piper WASM files with correct MIME types from node_modules
       ...(piperWasm ? [piperDevServer()] : []),
       // Prod build: copy Piper WASM assets to dist/{onnx,piper,worker}/

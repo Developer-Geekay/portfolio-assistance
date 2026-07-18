@@ -2,7 +2,12 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import useVoiceAssistant from '../hooks/useVoiceAssistant'
 import { USE_WHISPER_WASM, USE_PIPER_WASM } from '../features'
 import LoaderParticles from './LoaderParticles'
+import CertBubbles from './CertBubbles'
+import ContactCard from './ContactCard'
+import { detectCertifications, isContactRelevant } from '../lib/responseCues'
 import './Stage.css'
+
+const CONTACT_CARD_MS = 12000
 
 const ANY_WASM = USE_WHISPER_WASM || USE_PIPER_WASM
 
@@ -47,6 +52,7 @@ export default function Stage() {
     state,
     stateRef,
     transcript,
+    answer,
     toggle,
     analyserRef,
     modelReady,
@@ -99,6 +105,46 @@ export default function Stage() {
       })
     }
   }, [transcript])
+
+  // ── response cues: cert bubbles + contact card ─────────────────────
+  const [certRun, setCertRun] = useState({ certs: [], id: 0 })
+  const [showContact, setShowContact] = useState(false)
+  const contactTimerRef = useRef(null)
+
+  const closeContact = useCallback(() => {
+    clearTimeout(contactTimerRef.current)
+    setShowContact(false)
+  }, [])
+
+  useEffect(() => {
+    if (!answer.text) return
+    const certs = detectCertifications(answer.text)
+    if (certs.length) setCertRun({ certs, id: answer.id })
+
+    if (isContactRelevant(answer.text)) {
+      setShowContact(true)
+      clearTimeout(contactTimerRef.current)
+      contactTimerRef.current = setTimeout(() => setShowContact(false), CONTACT_CARD_MS)
+    }
+  }, [answer.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => () => clearTimeout(contactTimerRef.current), [])
+
+  // dev-only preview: window.__cue("some answer text") to test overlays
+  // without the backend
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    window.__cue = (text) => {
+      const certs = detectCertifications(text)
+      if (certs.length) setCertRun({ certs, id: Date.now() })
+      if (isContactRelevant(text)) {
+        setShowContact(true)
+        clearTimeout(contactTimerRef.current)
+        contactTimerRef.current = setTimeout(() => setShowContact(false), CONTACT_CARD_MS)
+      }
+    }
+    return () => { delete window.__cue }
+  }, [])
 
   // Only Whisper WASM blocks the loader — Piper WASM loads in background after stage is visible
   const whisperWasm = whisperMode === 'wasm'
@@ -514,6 +560,10 @@ export default function Stage() {
       {state !== 'idle' && (
         <p ref={transcriptRef} className="transcript">{transcript || (state === 'listening' ? '· · ·' : '')}</p>
       )}
+
+      {/* response cues */}
+      <CertBubbles key={certRun.id} certs={certRun.certs} />
+      {showContact && <ContactCard onClose={closeContact} />}
 
       <div className={`loader${loaderDone ? ' done' : ''}`}>
         <div className="loader-msg" key={loaderMsg.key}>
