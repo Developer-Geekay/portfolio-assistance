@@ -209,9 +209,6 @@ export default function useVoiceAssistant() {
 
   const speak = useCallback(async (text, resumeAfter = true) => {
     setBoth('processing')
-    // surface the full answer for response-cue overlays (before word-by-word
-    // transcript animation begins)
-    if (text) setAnswer((a) => ({ text, id: a.id + 1 }))
     let syncIv
     try {
       let blob
@@ -238,6 +235,10 @@ export default function useVoiceAssistant() {
         blob = await res.blob()
       }
       setBoth('speaking')
+      // surface the answer for response-cue overlays now that audio is about
+      // to play — so cues are in sync with the spoken response, not the
+      // earlier processing/TTS-generation gap
+      if (text) setAnswer((a) => ({ text, id: a.id + 1 }))
       const url  = URL.createObjectURL(blob)
       const el   = audioElRef.current
       outCtxRef.current.resume()

@@ -8,22 +8,27 @@
 
 .cert-bubble {
   position: absolute;
-  bottom: 8%;
+  bottom: 6%;
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 8px 13px 8px 10px;
-  border-radius: 12px;
-  background: rgba(14, 18, 24, 0.72);
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5),
-    0 0 18px color-mix(in srgb, var(--accent) 22%, transparent);
+  gap: 10px;
+  padding: 10px 15px 10px 12px;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--accent) 12%, rgba(10, 13, 18, 0.9)),
+      rgba(10, 13, 18, 0.92));
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow:
+    0 6px 26px rgba(0, 0, 0, 0.55),
+    0 0 24px color-mix(in srgb, var(--accent) 30%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--accent) 25%, transparent);
   white-space: nowrap;
   opacity: 0;
   transform: translateY(0);
-  animation: bubbleRise 6s ease-in-out forwards;
+  animation: bubbleRise 8s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
 }
 
 .cert-bubble-glyph {
@@ -31,39 +36,41 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 55%, transparent));
 }
 
 .cert-bubble-text {
   display: flex;
   flex-direction: column;
-  line-height: 1.15;
+  line-height: 1.2;
 }
 
 .cert-bubble-label {
   font-family: 'Michroma', sans-serif;
-  font-size: 11px;
-  letter-spacing: 0.02em;
-  color: var(--white);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  color: #f2f5f8;
 }
 
 .cert-bubble-sub {
-  font-size: 9px;
-  letter-spacing: 0.06em;
+  margin-top: 2px;
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--accent) 80%, var(--white));
-  opacity: 0.85;
+  color: color-mix(in srgb, var(--accent) 72%, #ffffff);
 }
 
 @keyframes bubbleRise {
-  0%   { opacity: 0; transform: translate(0, 40px) scale(0.9); }
-  15%  { opacity: 1; transform: translate(var(--x), 0) scale(1); }
-  75%  { opacity: 1; transform: translate(calc(var(--x) * -1), -46vh) scale(1); }
-  100% { opacity: 0; transform: translate(0, -58vh) scale(0.96); }
+  0%   { opacity: 0; transform: translate(0, 32px) scale(0.92); }
+  12%  { opacity: 1; transform: translate(var(--x), -4vh) scale(1); }
+  82%  { opacity: 1; transform: translate(calc(var(--x) * -1), -52vh) scale(1); }
+  100% { opacity: 0; transform: translate(0, -64vh) scale(0.97); }
 }
 
 @media (max-width: 600px) {
-  .cert-bubble { padding: 6px 10px 6px 8px; gap: 7px; }
-  .cert-bubble-label { font-size: 10px; }
+  .cert-bubble { padding: 8px 12px 8px 10px; gap: 8px; }
+  .cert-bubble-label { font-size: 11px; }
   .cert-bubble-sub { font-size: 8px; }
 }
 

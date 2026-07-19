@@ -7,7 +7,7 @@ import ContactCard from './ContactCard'
 import { detectCertifications, isContactRelevant } from '../lib/responseCues'
 import './Stage.css'
 
-const CONTACT_CARD_MS = 12000
+const CONTACT_CARD_MS = 6000 // grace period the contact card lingers after speech ends
 
 const ANY_WASM = USE_WHISPER_WASM || USE_PIPER_WASM
 
@@ -107,44 +107,69 @@ export default function Stage() {
   }, [transcript])
 
   // ── response cues: cert bubbles + contact card ─────────────────────
+  // Cues are driven by the spoken answer: detection runs when the answer
+  // arrives (at speech onset), bubbles re-emit in waves while `state` is
+  // 'speaking', and the contact card lingers a grace period after speech ends.
   const [certRun, setCertRun] = useState({ certs: [], id: 0 })
   const [showContact, setShowContact] = useState(false)
+  const activeCertsRef = useRef([])
+  const showContactRef = useRef(false)
+  const waveRef = useRef(null)
   const contactTimerRef = useRef(null)
+  useEffect(() => { showContactRef.current = showContact }, [showContact])
 
   const closeContact = useCallback(() => {
     clearTimeout(contactTimerRef.current)
     setShowContact(false)
   }, [])
 
-  useEffect(() => {
-    if (!answer.text) return
-    const certs = detectCertifications(answer.text)
-    if (certs.length) setCertRun({ certs, id: answer.id })
-
-    if (isContactRelevant(answer.text)) {
-      setShowContact(true)
-      clearTimeout(contactTimerRef.current)
-      contactTimerRef.current = setTimeout(() => setShowContact(false), CONTACT_CARD_MS)
+  const runDetection = useCallback((text) => {
+    if (!text) return
+    activeCertsRef.current = detectCertifications(text)
+    if (activeCertsRef.current.length) {
+      setCertRun((r) => ({ certs: activeCertsRef.current, id: r.id + 1 }))
     }
+    if (isContactRelevant(text)) {
+      clearTimeout(contactTimerRef.current)
+      setShowContact(true)
+    }
+  }, [])
+
+  // detect from the answer at speech onset
+  useEffect(() => {
+    runDetection(answer.text)
   }, [answer.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => () => clearTimeout(contactTimerRef.current), [])
+  // keep bubbles flowing while speaking; wind cues down after speech ends
+  useEffect(() => {
+    if (state === 'speaking') {
+      clearTimeout(contactTimerRef.current)
+      if (activeCertsRef.current.length) {
+        clearInterval(waveRef.current)
+        waveRef.current = setInterval(() => {
+          setCertRun((r) => ({ certs: activeCertsRef.current, id: r.id + 1 }))
+        }, 3500)
+      }
+    } else {
+      clearInterval(waveRef.current)
+      activeCertsRef.current = []
+      if (showContactRef.current) {
+        clearTimeout(contactTimerRef.current)
+        contactTimerRef.current = setTimeout(() => setShowContact(false), CONTACT_CARD_MS)
+      }
+    }
+    return () => clearInterval(waveRef.current)
+  }, [state])
+
+  useEffect(() => () => { clearInterval(waveRef.current); clearTimeout(contactTimerRef.current) }, [])
 
   // dev-only preview: window.__cue("some answer text") to test overlays
   // without the backend
   useEffect(() => {
     if (!import.meta.env.DEV) return
-    window.__cue = (text) => {
-      const certs = detectCertifications(text)
-      if (certs.length) setCertRun({ certs, id: Date.now() })
-      if (isContactRelevant(text)) {
-        setShowContact(true)
-        clearTimeout(contactTimerRef.current)
-        contactTimerRef.current = setTimeout(() => setShowContact(false), CONTACT_CARD_MS)
-      }
-    }
+    window.__cue = (text) => runDetection(text)
     return () => { delete window.__cue }
-  }, [])
+  }, [runDetection])
 
   // Only Whisper WASM blocks the loader — Piper WASM loads in background after stage is visible
   const whisperWasm = whisperMode === 'wasm'
