@@ -191,9 +191,13 @@ conn.execute("""CREATE TABLE IF NOT EXISTS settings (
     value TEXT
 )""")
 # Seed settings
+env_voice = os.environ.get("PIPER_VOICE", "en_US-amy-medium")
+if "/" in env_voice or "\\" in env_voice:
+    env_voice = os.path.splitext(os.path.basename(env_voice))[0]
+
 conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('whisper_mode', 'backend')")
 conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('piper_mode', 'backend')")
-conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('piper_voice', 'en_US-amy-medium')")
+conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('piper_voice', ?)", (env_voice,))
 conn.commit()
 
 def get_setting(key: str, default: str) -> str:
@@ -276,17 +280,28 @@ async def lifespan(app: FastAPI):
         print(f"Whisper failed on {WHISPER_DEVICE} ({e}); falling back to CPU.")
         stt_model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
         
-    initial_voice_id = get_setting("piper_voice", "en_US-amy-medium")
-    onnx_path = f"models/tts/{initial_voice_id}.onnx"
-    if os.path.exists(onnx_path):
-        try:
-            from piper import PiperVoice
-            loaded_voices[initial_voice_id] = PiperVoice.load(onnx_path)
-            print(f"Voice model {initial_voice_id} loaded.")
-        except Exception as e:
-            print(f"Failed to load initial voice {initial_voice_id}: {e}")
+    initial_voice_id = os.environ.get("PIPER_VOICE") or get_setting("piper_voice", "en_US-amy-medium")
+    if "/" in initial_voice_id or "\\" in initial_voice_id:
+        initial_voice_id = os.path.splitext(os.path.basename(initial_voice_id))[0]
+    set_setting("piper_voice", initial_voice_id)
+
+    if any(initial_voice_id.startswith(p) for p in ("af_", "am_", "bf_", "bm_", "kokoro")):
+        k = get_kokoro()
+        if k:
+            print(f"Kokoro voice {initial_voice_id} ready.")
+        else:
+            print(f"Kokoro voice {initial_voice_id} requested. Ensure models/tts/kokoro-v1.0.onnx and voices-v1.0.bin exist.")
     else:
-        print(f"Initial voice model {initial_voice_id} not found at {onnx_path}. It will be loaded on demand or after download.")
+        onnx_path = f"models/tts/{initial_voice_id}.onnx"
+        if os.path.exists(onnx_path):
+            try:
+                from piper import PiperVoice
+                loaded_voices[initial_voice_id] = PiperVoice.load(onnx_path)
+                print(f"Voice model {initial_voice_id} loaded.")
+            except Exception as e:
+                print(f"Failed to load initial voice {initial_voice_id}: {e}")
+        else:
+            print(f"Initial voice model {initial_voice_id} not found at {onnx_path}. It will be loaded on demand or after download.")
         
     print("Voice pipeline ready.")
     yield
