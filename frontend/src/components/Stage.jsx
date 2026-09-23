@@ -2,9 +2,9 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import useVoiceAssistant from '../hooks/useVoiceAssistant'
 import { USE_WHISPER_WASM, USE_PIPER_WASM } from '../features'
 import LoaderParticles from './LoaderParticles'
-import CertBubbles from './CertBubbles'
+import ShowcaseSpotlight from './ShowcaseSpotlight'
 import ContactCard from './ContactCard'
-import { detectCertifications, isContactRelevant } from '../lib/responseCues'
+import { detectShowcaseItems, isContactRelevant } from '../lib/responseCues'
 import './Stage.css'
 
 const CONTACT_CARD_MS = 6000 // grace period the contact card lingers after speech ends
@@ -106,15 +106,14 @@ export default function Stage() {
     }
   }, [transcript])
 
-  // ── response cues: cert bubbles + contact card ─────────────────────
+  // ── response cues: showcase spotlight + contact card ──────────────
   // Cues are driven by the spoken answer: detection runs when the answer
-  // arrives (at speech onset), bubbles re-emit in waves while `state` is
-  // 'speaking', and the contact card lingers a grace period after speech ends.
-  const [certRun, setCertRun] = useState({ certs: [], id: 0 })
+  // arrives (at speech onset). The spotlight deck stays active while speaking
+  // and lingers for a grace period after speech ends (same as contact card).
+  const [showcaseItems, setShowcaseItems] = useState([])
   const [showContact, setShowContact] = useState(false)
-  const activeCertsRef = useRef([])
   const showContactRef = useRef(false)
-  const waveRef = useRef(null)
+  const showcaseTimerRef = useRef(null)
   const contactTimerRef = useRef(null)
   useEffect(() => { showContactRef.current = showContact }, [showContact])
 
@@ -123,11 +122,17 @@ export default function Stage() {
     setShowContact(false)
   }, [])
 
+  const closeShowcase = useCallback(() => {
+    clearTimeout(showcaseTimerRef.current)
+    setShowcaseItems([])
+  }, [])
+
   const runDetection = useCallback((text) => {
     if (!text) return
-    activeCertsRef.current = detectCertifications(text)
-    if (activeCertsRef.current.length) {
-      setCertRun((r) => ({ certs: activeCertsRef.current, id: r.id + 1 }))
+    const items = detectShowcaseItems(text)
+    if (items.length) {
+      clearTimeout(showcaseTimerRef.current)
+      setShowcaseItems(items)
     }
     if (isContactRelevant(text)) {
       clearTimeout(contactTimerRef.current)
@@ -140,28 +145,27 @@ export default function Stage() {
     runDetection(answer.text)
   }, [answer.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // keep bubbles flowing while speaking; wind cues down after speech ends
+  // keep spotlight active while speaking; wind cues down after speech ends
   useEffect(() => {
     if (state === 'speaking') {
       clearTimeout(contactTimerRef.current)
-      if (activeCertsRef.current.length) {
-        clearInterval(waveRef.current)
-        waveRef.current = setInterval(() => {
-          setCertRun((r) => ({ certs: activeCertsRef.current, id: r.id + 1 }))
-        }, 3500)
-      }
+      clearTimeout(showcaseTimerRef.current)
     } else {
-      clearInterval(waveRef.current)
-      activeCertsRef.current = []
+      if (showcaseItems.length) {
+        clearTimeout(showcaseTimerRef.current)
+        showcaseTimerRef.current = setTimeout(() => setShowcaseItems([]), 7000)
+      }
       if (showContactRef.current) {
         clearTimeout(contactTimerRef.current)
         contactTimerRef.current = setTimeout(() => setShowContact(false), CONTACT_CARD_MS)
       }
     }
-    return () => clearInterval(waveRef.current)
-  }, [state])
+  }, [state, showcaseItems.length])
 
-  useEffect(() => () => { clearInterval(waveRef.current); clearTimeout(contactTimerRef.current) }, [])
+  useEffect(() => () => {
+    clearTimeout(showcaseTimerRef.current)
+    clearTimeout(contactTimerRef.current)
+  }, [])
 
   // dev-only preview: window.__cue("some answer text") to test overlays
   // without the backend
@@ -587,7 +591,9 @@ export default function Stage() {
       )}
 
       {/* response cues */}
-      <CertBubbles key={certRun.id} certs={certRun.certs} />
+      {showcaseItems.length > 0 && (
+        <ShowcaseSpotlight items={showcaseItems} onClose={closeShowcase} />
+      )}
       {showContact && <ContactCard onClose={closeContact} />}
 
       <div className={`loader${loaderDone ? ' done' : ''}`}>

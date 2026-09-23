@@ -1,0 +1,323 @@
+/* ShowcaseSpotlight.css — Holographic Deck matching the Stage Sci-Fi Minimalist UI */
+
+.showcase-spotlight {
+  position: absolute;
+  bottom: 124px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  width: 440px;
+  max-width: calc(100vw - 32px);
+  padding: 12px 14px 10px;
+  border-radius: 14px;
+  background: rgba(14, 18, 24, 0.88);
+  border: 1px solid rgba(223, 230, 236, 0.16);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.65),
+    0 0 24px color-mix(in srgb, var(--accent) 18%, transparent),
+    inset 0 1px 0 rgba(223, 230, 236, 0.18);
+  overflow: hidden;
+  animation: spotlightReveal 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Subtle top edge laser aura */
+.spotlight-edge-aura {
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: 0.8;
+  filter: drop-shadow(0 0 6px var(--accent));
+}
+
+/* Header bar */
+.spotlight-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(223, 230, 236, 0.08);
+}
+
+.spotlight-beacon-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spotlight-beacon {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent), 0 0 2px var(--accent);
+  animation: beaconPulse 2.4s infinite ease-in-out;
+}
+
+@keyframes beaconPulse {
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50%      { opacity: 1; transform: scale(1.15); box-shadow: 0 0 12px var(--accent); }
+}
+
+.spotlight-cat {
+  font-family: 'Michroma', sans-serif;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--white);
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+
+.spotlight-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spotlight-tag {
+  font-family: 'Michroma', sans-serif;
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  color: color-mix(in srgb, var(--accent) 85%, #ffffff);
+  text-transform: uppercase;
+}
+
+.spotlight-close {
+  background: none;
+  border: none;
+  color: var(--dim);
+  font-size: 13px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 2px 4px;
+  transition: color 0.2s ease;
+}
+.spotlight-close:hover {
+  color: var(--white);
+}
+
+/* Card Body with Smooth Keyframe Entrance */
+.spotlight-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 4px 10px;
+  animation: spotlightCardIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes spotlightCardIn {
+  from {
+    opacity: 0;
+    transform: translateX(12px) scale(0.98);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.spotlight-glyph-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, rgba(10, 13, 18, 0.95));
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.spotlight-text-wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.spotlight-title {
+  font-family: 'Michroma', sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: #f2f5f8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spotlight-sub {
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 300;
+  letter-spacing: 0.02em;
+  color: rgba(223, 230, 236, 0.72);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Footer with dots, counter and arrows */
+.spotlight-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 4px;
+}
+
+.spotlight-dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.spotlight-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(223, 230, 236, 0.22);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+.spotlight-dot.active {
+  width: 14px;
+  border-radius: 3px;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+}
+
+.spotlight-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spotlight-arrow {
+  background: none;
+  border: none;
+  color: var(--dim);
+  font-size: 15px;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  transition: color 0.2s ease;
+}
+.spotlight-arrow:hover {
+  color: var(--white);
+}
+
+.spotlight-counter {
+  font-family: 'Michroma', sans-serif;
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+}
+
+.spotlight-verified {
+  font-family: 'Michroma', sans-serif;
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: rgba(223, 230, 236, 0.4);
+}
+
+/* Hairline Progress Track matching the Stage loader track */
+.spotlight-progress-track {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(223, 230, 236, 0.08);
+}
+
+.spotlight-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: progressFill 4.2s linear forwards;
+}
+
+@keyframes progressFill {
+  from { width: 0%; }
+  to   { width: 100%; }
+}
+
+@keyframes spotlightReveal {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+/* Mobile Responsive (< 600px) */
+@media (max-width: 600px) {
+  .showcase-spotlight {
+    bottom: 96px;
+    left: 12px;
+    right: 12px;
+    transform: none;
+    width: auto;
+    max-width: none;
+    padding: 10px 12px 8px;
+  }
+
+  .spotlight-title {
+    font-size: 12px;
+  }
+
+  .spotlight-sub {
+    font-size: 10px;
+  }
+
+  .spotlight-glyph-wrap {
+    width: 36px;
+    height: 36px;
+  }
+
+  @keyframes spotlightReveal {
+    from {
+      opacity: 0;
+      transform: translateY(14px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .showcase-spotlight {
+    animation: spotlightFade 0.3s ease both;
+  }
+  .spotlight-body {
+    animation: none;
+  }
+  .spotlight-progress-bar {
+    animation: none;
+  }
+  @keyframes spotlightFade {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+}
