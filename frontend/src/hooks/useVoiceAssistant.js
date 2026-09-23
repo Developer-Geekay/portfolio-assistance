@@ -6,7 +6,7 @@ import { USE_WHISPER_WASM, USE_PIPER_WASM } from '../features'
 // vite dev proxy / nginx → FastAPI; override with VITE_API_BASE when mounted
 // inside another site whose /api is taken (e.g. /assistance-api in a portfolio)
 const API_BASE       = import.meta.env.VITE_API_BASE || '/api'
-const SILENCE_MS     = 1400     // pause after speech → user finished talking
+const SILENCE_MS     = 950      // pause after speech → user finished talking (snappier turn-taking)
 const NO_SPEECH_MS   = 10000    // never spoke at all → give up, back to idle
 const POST_ANSWER_MS = 8000     // quiet after an answer → say goodbye, go idle
 const VAD_MIN        = 0.008    // absolute floor for the adaptive speech threshold
@@ -47,6 +47,29 @@ export default function useVoiceAssistant() {
   // Full answer string exposed for response-cue overlays (cert bubbles /
   // contact card). id increments so repeated identical answers still trigger.
   const [answer, setAnswer]         = useState({ text: '', id: 0 })
+
+  // Caption toggle state (persisted in localStorage)
+  const [captionsEnabled, setCaptionsEnabled] = useState(() => {
+    try {
+      const saved = localStorage.getItem('assistant_captions')
+      return saved !== null ? saved === 'true' : true
+    } catch {
+      return true
+    }
+  })
+  const captionsEnabledRef = useRef(captionsEnabled)
+  useEffect(() => {
+    captionsEnabledRef.current = captionsEnabled
+  }, [captionsEnabled])
+
+  const toggleCaptions = useCallback(() => {
+    setCaptionsEnabled(prev => {
+      const next = !prev
+      try { localStorage.setItem('assistant_captions', String(next)) } catch {}
+      if (!next) setTranscript('')
+      return next
+    })
+  }, [])
   
   // Settings and mode states
   const [whisperMode, setWhisperMode] = useState('backend') // 'wasm' | 'backend'
@@ -243,25 +266,27 @@ export default function useVoiceAssistant() {
       const el   = audioElRef.current
       outCtxRef.current.resume()
       analyserRef.current = outAnalyserRef.current
-
-      const words = text.split(/\s+/)
-      setTranscript('')
+      const showCaptions = captionsEnabledRef.current
+      const words = showCaptions ? text.split(/\s+/) : []
+      if (showCaptions) setTranscript('')
 
       await new Promise((resolve) => {
         el.onended = resolve
         el.onerror = resolve
         el.src = url
         el.play().then(() => {
-          syncIv = setInterval(() => {
-            const dur  = el.duration || 1
-            const frac = Math.min(1, el.currentTime / dur)
-            const n    = Math.max(1, Math.round(words.length * frac))
-            setTranscript(words.slice(0, n).join(' '))
-          }, 120)
+          if (showCaptions) {
+            syncIv = setInterval(() => {
+              const dur  = el.duration || 1
+              const frac = Math.min(1, el.currentTime / dur)
+              const n    = Math.max(1, Math.round(words.length * frac))
+              setTranscript(words.slice(0, n).join(' '))
+            }, 120)
+          }
         }).catch(resolve)
       })
       URL.revokeObjectURL(url)
-      setTranscript(text)
+      if (showCaptions) setTranscript(text)
     } catch (e) {
       console.warn('[voice] speak error:', e)
     }
@@ -340,7 +365,7 @@ export default function useVoiceAssistant() {
         beginListeningRef.current({ postAnswer: turnsRef.current > 0 })
         return
       }
-      setTranscript(text)
+      if (captionsEnabledRef.current) setTranscript(text)
       await askApi(text)
     } catch (e) {
       console.warn('[voice] transcription error:', e)
@@ -468,6 +493,8 @@ export default function useVoiceAssistant() {
     selectedVoice,
     availableVoices,
     voiceDownloadProgress,
-    changeVoice
+    changeVoice,
+    captionsEnabled,
+    toggleCaptions,
   }
 }

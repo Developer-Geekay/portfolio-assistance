@@ -63,7 +63,9 @@ export default function Stage() {
     selectedVoice,
     availableVoices,
     voiceDownloadProgress,
-    changeVoice
+    changeVoice,
+    captionsEnabled,
+    toggleCaptions,
   } = useVoiceAssistant()
 
   // toggle lives in a ref so the canvas click handler always sees the latest
@@ -582,53 +584,70 @@ export default function Stage() {
 
   return (
     <div className="stage" ref={stageRef}>
-      {piperMode === 'wasm' && availableVoices.length > 0 && state === 'idle' && (
-        <div className="voice-selector-container" ref={voiceRef}>
-          <button
-            className={`voice-pill${voiceOpen ? ' open' : ''}`}
-            onClick={() => setVoiceOpen(v => !v)}
-            aria-expanded={voiceOpen}
-            aria-haspopup="listbox"
-          >
-            <svg className="voice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-              <line x1="12" y1="19" x2="12" y2="22"/>
-            </svg>
-            <span className="voice-pill-label">
-              {(availableVoices.find(v => v.id === selectedVoice)?.name || selectedVoice).replace(/\s*\(.*\)/, '')}
-            </span>
-            <svg className="voice-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M19.5 8.25l-7.5 7.5-7.5-7.5"/>
-            </svg>
-          </button>
-          {voiceOpen && (
-            <ul className="voice-dropdown" role="listbox" aria-label="Select voice">
-              {availableVoices.map(v => (
-                <li
-                  key={v.id}
-                  role="option"
-                  aria-selected={v.id === selectedVoice}
-                  className={`voice-option${v.id === selectedVoice ? ' selected' : ''}`}
-                  onClick={() => { changeVoice(v.id); setVoiceOpen(false) }}
-                >
-                  <span className="voice-option-name">{v.name}</span>
-                  {v.id === selectedVoice && (
-                    <svg className="voice-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="20 6 9 17 4 12"/>
-                    </svg>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-          {voiceDownloadProgress > 0 && voiceDownloadProgress < 100 && (
-            <div className="voice-download-progress">
-              Downloading: {voiceDownloadProgress}%
-            </div>
-          )}
-        </div>
-      )}
+      {/* Top right controls: caption toggle and optional voice selector */}
+      <div className="stage-top-controls">
+        <button
+          className={`control-pill caption-pill${captionsEnabled ? ' active' : ''}`}
+          onClick={toggleCaptions}
+          title={captionsEnabled ? 'Captions: ON (click to turn off)' : 'Captions: OFF (click to turn on)'}
+          aria-label="Toggle subtitles/captions"
+        >
+          <svg className="control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2.5" y="4.5" width="19" height="15" rx="3" />
+            <path d="M7 15h2.5a1 1 0 0 0 1-1v-0.8a1 1 0 0 0-1-1H8a1 1 0 0 1-1-1V10.4a1 1 0 0 1 1-1H10.5" />
+            <path d="M13.5 15H16a1 1 0 0 0 1-1v-0.8a1 1 0 0 0-1-1h-1.5a1 1 0 0 1-1-1V10.4a1 1 0 0 1 1-1H17" />
+          </svg>
+          <span className="control-pill-label">CC {captionsEnabled ? 'ON' : 'OFF'}</span>
+        </button>
+
+        {piperMode === 'wasm' && availableVoices.length > 0 && state === 'idle' && (
+          <div className="voice-selector-container" ref={voiceRef}>
+            <button
+              className={`voice-pill${voiceOpen ? ' open' : ''}`}
+              onClick={() => setVoiceOpen(v => !v)}
+              aria-expanded={voiceOpen}
+              aria-haspopup="listbox"
+            >
+              <svg className="voice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="22"/>
+              </svg>
+              <span className="voice-pill-label">
+                {(availableVoices.find(v => v.id === selectedVoice)?.name || selectedVoice).replace(/\s*\(.*\)/, '')}
+              </span>
+              <svg className="voice-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19.5 8.25l-7.5 7.5-7.5-7.5"/>
+              </svg>
+            </button>
+            {voiceOpen && (
+              <ul className="voice-dropdown" role="listbox" aria-label="Select voice">
+                {availableVoices.map(v => (
+                  <li
+                    key={v.id}
+                    role="option"
+                    aria-selected={v.id === selectedVoice}
+                    className={`voice-option${v.id === selectedVoice ? ' selected' : ''}`}
+                    onClick={() => { changeVoice(v.id); setVoiceOpen(false) }}
+                  >
+                    <span className="voice-option-name">{v.name}</span>
+                    {v.id === selectedVoice && (
+                      <svg className="voice-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12"/>
+                      </svg>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {voiceDownloadProgress > 0 && voiceDownloadProgress < 100 && (
+              <div className="voice-download-progress">
+                Downloading: {voiceDownloadProgress}%
+              </div>
+            )}
+          </div>
+        )}
+      </div>
       <div className="legend" aria-hidden="true"><span>Gokula</span><span>Kannan</span></div>
       <canvas className="stage-canvas" ref={canvasRef} />
       <div className="start">Start</div>
@@ -636,7 +655,7 @@ export default function Stage() {
       {state === 'idle' && tagline.text && (
         <p className="tagline" key={tagline.key}>{tagline.text}</p>
       )}
-      {state !== 'idle' && (
+      {captionsEnabled && state !== 'idle' && (
         <p ref={transcriptRef} className="transcript">{transcript || (state === 'listening' ? '· · ·' : '')}</p>
       )}
 

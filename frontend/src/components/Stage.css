@@ -289,18 +289,27 @@
   }
 }
 
-/* ---- voice selector on main stage ---- */
-.voice-selector-container {
+/* ---- stage top-right controls (captions toggle & voice selector) ---- */
+.stage-top-controls {
   position: absolute;
   top: 20px;
   right: 20px;
   z-index: 10;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.voice-selector-container {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
   align-items: flex-end;
 }
 
+.control-pill,
 .voice-pill {
   display: flex;
   align-items: center;
@@ -320,11 +329,12 @@
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   box-shadow: 0 2px 16px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.06);
-  transition: border-color 0.25s ease, color 0.25s ease, background 0.25s ease;
+  transition: border-color 0.25s ease, color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease, opacity 0.25s ease;
   white-space: nowrap;
   min-height: 34px;
   touch-action: manipulation;
 }
+.control-pill:hover,
 .voice-pill:hover {
   border-color: rgba(223, 230, 236, 0.35);
   color: rgba(223, 230, 236, 0.95);
@@ -333,6 +343,29 @@
 .voice-pill.open {
   border-color: rgba(223, 230, 236, 0.4);
   color: rgba(223, 230, 236, 0.95);
+}
+
+.caption-pill.active {
+  border-color: rgba(223, 230, 236, 0.45);
+  color: rgba(223, 230, 236, 0.98);
+  box-shadow: 0 0 12px rgba(223, 230, 236, 0.12), inset 0 1px 0 rgba(255,255,255,0.1);
+}
+.caption-pill:not(.active) {
+  opacity: 0.50;
+  border-style: dashed;
+}
+.caption-pill:not(.active):hover {
+  opacity: 0.85;
+}
+
+.control-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+.control-pill-label {
+  flex: 1;
 }
 
 .voice-icon {
@@ -446,13 +479,15 @@
 }
 
 @media (max-width: 600px) {
-  .voice-selector-container {
+  .stage-top-controls {
     top: 16px;
     right: 16px;
+    gap: 8px;
   }
+  .control-pill,
   .voice-pill {
     font-size: 9px;
-    padding: 6px 12px 6px 10px;
+    padding: 6px 11px 6px 9px;
     min-height: 32px;
   }
   .voice-dropdown {
