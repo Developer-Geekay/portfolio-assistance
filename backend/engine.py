@@ -272,29 +272,37 @@ def reload_kb():
 
 def ask(question: str, history: list | None = None) -> str:
     recent = (history or [])[-3:]
-    # Examples are always placed immediately before the current question so the
-    # model attends to them rather than seeing them buried in an older turn.
-    examples = _get_qa_examples(question)
-    current_msg = examples + "Question: " + question
     messages = []
 
     if recent:
         messages.append({"role": "user",      "content": _system_prompt + "\n\nQuestion: " + recent[0]["q"]})
         messages.append({"role": "assistant", "content": recent[0]["a"]})
         for turn in recent[1:]:
-            messages.append({"role": "user",      "content": turn["q"]})
+            messages.append({"role": "user",      "content": "Question: " + turn["q"]})
             messages.append({"role": "assistant", "content": turn["a"]})
-        messages.append({"role": "user", "content": current_msg})
+        messages.append({"role": "user", "content": "Question: " + question})
     else:
-        messages.append({"role": "user", "content": _system_prompt + "\n\n" + current_msg})
+        messages.append({"role": "user", "content": _system_prompt + "\n\nQuestion: " + question})
+
+    stop_tokens = [
+        "<end_of_turn>",
+        "<start_of_turn>",
+        "\n<start_of_turn>",
+        "<eos>",
+        "\nQuestion:",
+        "\nUser:",
+        "\nQ:",
+        "\nHuman:",
+        "\n\n\n",
+    ]
 
     try:
         response = llm.create_chat_completion(
             messages=messages,
-            max_tokens=220,
+            max_tokens=350,
             temperature=0.18,
             repeat_penalty=1.18,
-            stop=["<end_of_turn>", "\n\n\n", "\nQuestion", "\nUser"],
+            stop=stop_tokens,
         )
         return _clean_response(response["choices"][0]["message"]["content"].strip())
     except ValueError as e:
@@ -305,18 +313,27 @@ def ask(question: str, history: list | None = None) -> str:
             fallback_msgs = [{"role": "user", "content": _system_prompt + "\n\nQuestion: " + question}]
             response = llm.create_chat_completion(
                 messages=fallback_msgs,
-                max_tokens=180,
+                max_tokens=250,
                 temperature=0.18,
                 repeat_penalty=1.18,
-                stop=["<end_of_turn>", "\n\n\n", "\nQuestion", "\nUser"],
+                stop=stop_tokens,
             )
             return _clean_response(response["choices"][0]["message"]["content"].strip())
         raise
 
 
 def _clean_response(text: str) -> str:
-    """Clean response: remove trailing sentence fragments and strip accidental
-    boilerplate closing questions."""
+    """Clean response: remove trailing sentence fragments, turn markers, and boilerplate."""
+    # First, truncate if any turn marker or leaked role tag appeared
+    for marker in ["<start_of_turn>", "<end_of_turn>", "<eos>", "\nQuestion:", "\nUser:", "\nQ:", "\nHuman:"]:
+        if marker in text:
+            text = text.split(marker)[0]
+
+    # Clean inline leaks like "... <start_of_turn>user>Question:"
+    text = re.sub(r"<start_of_turn>.*$", "", text, flags=re.DOTALL)
+    text = re.sub(r"<end_of_turn>.*$", "", text, flags=re.DOTALL)
+    text = re.sub(r"(?i)\s*(Question|User|Human):\s*.*$", "", text, flags=re.DOTALL)
+
     # Strip repetitive ending invitations like "Is there anything specific you'd like to know..."
     cleaned = re.sub(
         r"(?i)\s*(is there anything (else|specific)|let me know if|feel free to ask|how else can i help|would you like to know).*?\??$",
