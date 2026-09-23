@@ -7,4 +7,5 @@ llama-cpp-python
 faster-whisper
 piper-tts
 numpy
+websockets
 
