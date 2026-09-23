@@ -135,17 +135,33 @@ export default function Stage() {
   }, [])
 
   const runDetection = useCallback((text) => {
-    if (!text) return
+    if (!text) {
+      setShowcaseItems([])
+      setShowContact(false)
+      return
+    }
     const items = detectShowcaseItems(text)
     if (items.length) {
       clearTimeout(showcaseTimerRef.current)
       clearTimeout(exitTimerRef.current)
       setShowcaseExiting(false)
       setShowcaseItems(items)
+    } else {
+      // Immediately clear old moons from previous turns if current turn has no cues
+      clearTimeout(showcaseTimerRef.current)
+      clearTimeout(exitTimerRef.current)
+      setShowcaseExiting(true)
+      setTimeout(() => {
+        setShowcaseItems([])
+        setShowcaseExiting(false)
+      }, 300)
     }
+
     if (isContactRelevant(text)) {
       clearTimeout(contactTimerRef.current)
       setShowContact(true)
+    } else {
+      setShowContact(false)
     }
   }, [])
 
@@ -154,6 +170,20 @@ export default function Stage() {
     runDetection(answer.text)
   }, [answer.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Clear moons whenever user starts a new question (listening or processing)
+  useEffect(() => {
+    if (state === 'listening' || state === 'processing') {
+      clearTimeout(showcaseTimerRef.current)
+      clearTimeout(exitTimerRef.current)
+      setShowcaseExiting(true)
+      const t = setTimeout(() => {
+        setShowcaseItems([])
+        setShowcaseExiting(false)
+      }, 250)
+      return () => clearTimeout(t)
+    }
+  }, [state])
+
   // keep orbital moons active while speaking; wind cues down after speech ends
   useEffect(() => {
     if (state === 'speaking') {
@@ -161,18 +191,18 @@ export default function Stage() {
       clearTimeout(showcaseTimerRef.current)
       clearTimeout(exitTimerRef.current)
       setShowcaseExiting(false)
-    } else {
+    } else if (state === 'idle') {
       if (showcaseItems.length) {
         clearTimeout(showcaseTimerRef.current)
         clearTimeout(exitTimerRef.current)
-        // Linger in orbit for 11 seconds after speaking so all items are admired
+        // Linger in orbit for 8 seconds after speaking then smoothly vanish
         showcaseTimerRef.current = setTimeout(() => {
           setShowcaseExiting(true)
           exitTimerRef.current = setTimeout(() => {
             setShowcaseItems([])
             setShowcaseExiting(false)
-          }, 500)
-        }, 11000)
+          }, 450)
+        }, 8000)
       }
       if (showContactRef.current) {
         clearTimeout(contactTimerRef.current)
