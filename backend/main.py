@@ -22,7 +22,7 @@ import asyncio
 import base64
 
 from dotenv import load_dotenv
-load_dotenv()   # backend/.env — loaded before engine reads its env vars
+load_dotenv(override=True)   # backend/.env — loaded before engine reads its env vars
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
