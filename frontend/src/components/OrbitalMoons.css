@@ -3,164 +3,160 @@
 .orbital-moons-system {
   position: absolute;
   inset: 0;
-  z-index: 5;
+  z-index: 10;
   pointer-events: none;
   overflow: hidden;
 }
 
-/* Subtle cosmic orbital paths around the Earth */
-.orbital-track-primary {
+/* Subtle cosmic orbital tracks around the central Earth */
+.orbit-aura-ring {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: clamp(400px, 48vw, 640px);
-  height: clamp(400px, 48vw, 640px);
   border-radius: 50%;
-  border: 1px dashed rgba(223, 230, 236, 0.07);
-  pointer-events: none;
-  animation: orbitTrackSpin 180s linear infinite;
-}
-
-.orbital-track-secondary {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: clamp(460px, 55vw, 740px);
-  height: clamp(340px, 40vw, 560px);
-  border-radius: 50%;
-  border: 1px solid rgba(223, 230, 236, 0.03);
   pointer-events: none;
 }
 
-@keyframes orbitTrackSpin {
+.orbit-aura-inner {
+  width: clamp(400px, 46vw, 620px);
+  height: clamp(400px, 46vw, 620px);
+  border: 1px dashed rgba(223, 230, 236, 0.05);
+  animation: orbitAuraSpin 220s linear infinite;
+}
+
+.orbit-aura-outer {
+  width: clamp(520px, 60vw, 840px);
+  height: clamp(520px, 60vw, 840px);
+  border: 1px solid rgba(223, 230, 236, 0.025);
+  animation: orbitAuraSpin 360s linear infinite reverse;
+}
+
+@keyframes orbitAuraSpin {
   from { transform: translate(-50%, -50%) rotate(0deg); }
   to   { transform: translate(-50%, -50%) rotate(360deg); }
 }
 
-/* Each Individual Orbital Moon Satellite */
-.orbital-moon {
+/* Each Individual Orbital Satellite Unit */
+.orbital-satellite {
   position: absolute;
-  --orbit-r: clamp(200px, 24vw, 320px);
-  left: calc(50% + (var(--cos) * var(--orbit-r)));
-  top:  calc(50% + (var(--sin) * var(--orbit-r)));
-  transform: translate(-50%, -50%);
   display: flex;
-  flex-direction: column;
   align-items: center;
   pointer-events: auto;
   cursor: pointer;
-  z-index: 6;
+  z-index: 12;
   opacity: 0;
   animation:
-    moonPopIn 0.65s cubic-bezier(0.175, 0.885, 0.32, 1.275) var(--delay) forwards,
-    moonFloat 6s ease-in-out calc(var(--delay) + 0.65s) infinite;
-  transition: transform 0.25s ease, filter 0.25s ease;
+    satelliteDeploy 0.75s cubic-bezier(0.16, 1, 0.3, 1) var(--delay, 0s) forwards,
+    satelliteDrift 6.5s ease-in-out calc(var(--delay, 0s) + 0.75s + var(--drift-delay, 0s)) infinite;
+  transition: filter 0.3s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.orbital-moon:hover {
-  transform: translate(-50%, -50%) scale(1.12);
-  z-index: 10;
+.orbital-satellite:hover {
+  z-index: 20;
 }
 
 /* Vanish / Exit Animation */
-.orbital-moons-system.exiting .orbital-moon {
-  animation: moonPopOut 0.5s cubic-bezier(0.6, -0.28, 0.735, 0.045) forwards !important;
+.orbital-moons-system.exiting .orbital-satellite {
+  animation: satelliteVanish 0.45s cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
 }
 
-@keyframes moonPopIn {
+@keyframes satelliteDeploy {
   0% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0) rotate(-18deg);
+    transform: translateY(-50%) scale(0.35) translateX(calc(var(--dir-x, 1) * -30px));
     filter: blur(8px);
   }
   70% {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1.15) rotate(3deg);
+    transform: translateY(-50%) scale(1.04) translateX(calc(var(--dir-x, 1) * 3px));
     filter: blur(0);
   }
   100% {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1) rotate(0);
+    transform: translateY(-50%) scale(1) translateX(0);
     filter: blur(0);
   }
 }
 
-@keyframes moonPopOut {
+@keyframes satelliteDrift {
+  0%, 100% {
+    transform: translateY(-50%) translateY(0px);
+  }
+  50% {
+    transform: translateY(-50%) translateY(-6px);
+  }
+}
+
+@keyframes satelliteVanish {
   0% {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: translateY(-50%) scale(1);
     filter: blur(0);
   }
   100% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.1) rotate(15deg);
-    filter: blur(10px);
+    transform: translateY(-50%) scale(0.6) translateX(calc(var(--dir-x, 1) * -20px));
+    filter: blur(8px);
   }
 }
 
-@keyframes moonFloat {
-  0%, 100% {
-    transform: translate(-50%, -50%) translateY(0px);
-  }
-  50% {
-    transform: translate(-50%, -50%) translateY(-9px);
-  }
+/* Desktop Flank Formations */
+.orbital-satellite.flank-west {
+  right: calc(50% + clamp(155px, 16vw, 230px));
+  top: calc(50% + var(--y-off, 0px));
+  transform: translateY(-50%);
+  justify-content: flex-end;
 }
 
-/* Subtle tether ray pointing toward the center Earth */
-.moon-tether {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 1px;
-  height: 28px;
-  background: linear-gradient(to top, transparent, color-mix(in srgb, var(--accent) 30%, transparent));
-  transform-origin: top center;
-  transform: rotate(calc(atan2(var(--sin), var(--cos)) * 180 / 3.14159 + 90deg));
-  pointer-events: none;
-  opacity: 0.4;
+.orbital-satellite.flank-east {
+  left: calc(50% + clamp(155px, 16vw, 230px));
+  top: calc(50% + var(--y-off, 0px));
+  transform: translateY(-50%);
+  justify-content: flex-start;
 }
 
-/* Moon Orb Sphere */
-.moon-orb-wrap {
+/* Satellite Orb Node with Real Logo */
+.satellite-orb {
   position: relative;
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background:
-    radial-gradient(circle at 35% 35%,
-      color-mix(in srgb, var(--accent) 22%, rgba(20, 26, 36, 0.95)),
-      rgba(10, 13, 18, 0.96));
-  border: 1px solid color-mix(in srgb, var(--accent) 55%, rgba(223, 230, 236, 0.2));
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.7),
-    0 0 20px color-mix(in srgb, var(--accent) 28%, transparent),
-    inset 0 1px 2px rgba(255, 255, 255, 0.25);
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+  background: radial-gradient(circle at 35% 35%,
+    color-mix(in srgb, var(--accent) 24%, rgba(20, 26, 38, 0.96)),
+    rgba(8, 11, 16, 0.98)
+  );
+  border: 1.5px solid color-mix(in srgb, var(--accent) 65%, rgba(255, 255, 255, 0.22));
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.7),
+    0 0 18px color-mix(in srgb, var(--accent) 32%, transparent),
+    inset 0 1px 2px rgba(255, 255, 255, 0.35);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease, border-color 0.3s ease;
 }
 
-.orbital-moon:hover .moon-orb-wrap {
+.orbital-satellite:hover .satellite-orb {
   border-color: var(--accent);
   box-shadow:
     0 12px 32px rgba(0, 0, 0, 0.8),
-    0 0 28px var(--accent),
-    inset 0 1px 3px rgba(255, 255, 255, 0.4);
+    0 0 26px var(--accent),
+    inset 0 1px 3px rgba(255, 255, 255, 0.5);
+  transform: scale(1.1);
 }
 
-/* Outer Pulsating Ring Halo */
-.moon-ring-halo {
+/* Outer Orbit Halo Ring */
+.satellite-halo {
   position: absolute;
-  inset: -4px;
+  inset: -5px;
   border-radius: 50%;
-  border: 1px dashed color-mix(in srgb, var(--accent) 35%, transparent);
-  animation: haloSpin 16s linear infinite;
+  border: 1px dashed color-mix(in srgb, var(--accent) 42%, transparent);
+  pointer-events: none;
+  animation: haloSpin 20s linear infinite;
 }
 
 @keyframes haloSpin {
@@ -168,129 +164,227 @@
   to   { transform: rotate(360deg); }
 }
 
-.moon-glyph {
+/* Official Logo Badge Image */
+.satellite-real-img {
+  width: 25px;
+  height: 25px;
+  object-fit: contain;
+  pointer-events: none;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 40%, transparent));
+}
+
+/* Fallback vector icon */
+.satellite-fallback-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 60%, transparent));
+  pointer-events: none;
 }
 
-/* Floating Info Capsule */
-.moon-capsule {
-  margin-top: 8px;
+.satellite-fallback-icon svg {
+  width: 22px;
+  height: 22px;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 50%, transparent));
+}
+
+/* Aerospace Glass Capsule */
+.satellite-capsule {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 4px 10px 5px;
-  border-radius: 10px;
-  background: rgba(10, 13, 18, 0.85);
+  justify-content: center;
+  padding: 6px 14px;
+  border-radius: 20px;
+  background: rgba(10, 14, 22, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(223, 230, 236, 0.12);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
   white-space: nowrap;
   pointer-events: none;
-  max-width: 170px;
+  transition: border-color 0.3s ease, background 0.3s ease, transform 0.3s ease;
 }
 
-.moon-meta {
-  display: flex;
+.flank-west .satellite-capsule {
+  margin-right: 10px;
+  text-align: right;
+  align-items: flex-end;
+}
+
+.flank-east .satellite-capsule {
+  margin-left: 10px;
+  text-align: left;
+  align-items: flex-start;
+}
+
+.orbital-satellite:hover .satellite-capsule {
+  background: rgba(14, 19, 30, 0.94);
+  border-color: color-mix(in srgb, var(--accent) 55%, rgba(223, 230, 236, 0.25));
+}
+
+/* Capsule Typography */
+.satellite-meta {
+  display: inline-flex;
   align-items: center;
   gap: 5px;
   margin-bottom: 2px;
 }
 
-.moon-dot {
-  width: 4px;
-  height: 4px;
+.satellite-dot {
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 6px var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  flex-shrink: 0;
 }
 
-.moon-tag {
+.satellite-tag {
   font-family: 'Michroma', sans-serif;
   font-size: 7.5px;
-  letter-spacing: 0.12em;
-  color: color-mix(in srgb, var(--accent) 80%, #ffffff);
+  letter-spacing: 0.14em;
+  color: color-mix(in srgb, var(--accent) 85%, #ffffff);
   text-transform: uppercase;
+  font-weight: 600;
 }
 
-.moon-title {
+.satellite-title {
   font-family: 'Michroma', sans-serif;
   font-size: 11px;
-  letter-spacing: 0.02em;
-  color: #f2f5f8;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
+  letter-spacing: 0.03em;
+  color: #f1f4f8;
+  font-weight: 500;
 }
 
-.moon-sub {
-  font-size: 9px;
-  font-weight: 300;
-  letter-spacing: 0.02em;
-  color: rgba(223, 230, 236, 0.65);
-  margin-top: 1px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
+/* Gravitational Tether Ray */
+.satellite-trajectory {
+  width: clamp(24px, 3.5vw, 46px);
+  height: 1px;
+  flex-shrink: 0;
+  pointer-events: none;
+  opacity: 0.55;
+  transition: opacity 0.3s ease;
 }
 
-/* Mobile Responsive (< 600px) */
+.flank-west .satellite-trajectory {
+  background: linear-gradient(to right, color-mix(in srgb, var(--accent) 65%, transparent), transparent);
+}
+
+.flank-east .satellite-trajectory {
+  background: linear-gradient(to left, color-mix(in srgb, var(--accent) 65%, transparent), transparent);
+}
+
+.orbital-satellite:hover .satellite-trajectory {
+  opacity: 0.95;
+}
+
+/* Responsive Mobile Layout (< 600px) */
 @media (max-width: 600px) {
-  .orbital-moon {
-    --orbit-rx: clamp(130px, 38vw, 160px);
-    --orbit-ry: clamp(160px, 25vh, 220px);
-    left: calc(50% + (var(--cos) * var(--orbit-rx)));
-    top:  calc(50% + (var(--sin) * var(--orbit-ry)));
+  .orbit-aura-ring {
+    display: none;
   }
 
-  .moon-orb-wrap {
-    width: 38px;
-    height: 38px;
+  .orbital-satellite.flank-west {
+    right: auto;
+    left: 8px;
+    top: calc(50% + var(--y-off-mobile, 0px));
+    transform: translateY(-50%);
+    justify-content: flex-start;
   }
 
-  .moon-glyph svg {
-    width: 18px;
-    height: 18px;
+  .orbital-satellite.flank-east {
+    left: auto;
+    right: 8px;
+    top: calc(50% + var(--y-off-mobile, 0px));
+    transform: translateY(-50%);
+    justify-content: flex-end;
   }
 
-  .moon-capsule {
-    padding: 3px 7px 4px;
-    margin-top: 5px;
-    max-width: 130px;
+  /* On mobile: West has orb on left edge, East has orb on right edge */
+  .flank-west .satellite-orb {
+    order: 1;
+  }
+  .flank-west .satellite-capsule {
+    order: 2;
+    margin-right: 0;
+    margin-left: 8px;
+    text-align: left;
+    align-items: flex-start;
+    max-width: clamp(140px, 42vw, 165px);
   }
 
-  .moon-tag {
+  .flank-east .satellite-capsule {
+    order: 1;
+    margin-left: 0;
+    margin-right: 8px;
+    text-align: right;
+    align-items: flex-end;
+    max-width: clamp(140px, 42vw, 165px);
+  }
+  .flank-east .satellite-orb {
+    order: 2;
+  }
+
+  .satellite-orb {
+    width: 36px;
+    height: 36px;
+  }
+
+  .satellite-real-img {
+    width: 20px;
+    height: 20px;
+  }
+
+  .satellite-fallback-icon svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .satellite-capsule {
+    padding: 4px 9px;
+    border-radius: 14px;
+  }
+
+  .satellite-meta {
+    margin-bottom: 1px;
+    gap: 4px;
+  }
+
+  .satellite-dot {
+    width: 4px;
+    height: 4px;
+  }
+
+  .satellite-tag {
     font-size: 6.5px;
+    letter-spacing: 0.1em;
   }
 
-  .moon-title {
-    font-size: 9.5px;
+  .satellite-title {
+    font-size: 8.5px;
+    letter-spacing: 0.02em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
   }
 
-  .moon-sub {
-    font-size: 8px;
-    display: none; /* Hide detailed subtitle on small mobile to stay ultra-compact */
-  }
-
-  .orbital-track-primary,
-  .orbital-track-secondary {
-    display: none; /* Avoid visual clutter on small screens */
+  .satellite-trajectory {
+    display: none;
   }
 }
 
+/* Reduced Motion Mode */
 @media (prefers-reduced-motion: reduce) {
-  .orbital-moon {
-    animation: moonFadeIn 0.4s ease var(--delay) forwards;
+  .orbital-satellite {
+    animation: satelliteFadeIn 0.35s ease var(--delay, 0s) forwards;
   }
-  .moon-ring-halo,
-  .orbital-track-primary {
+  .satellite-halo,
+  .orbit-aura-ring {
     animation: none;
   }
-  @keyframes moonFadeIn {
+  @keyframes satelliteFadeIn {
     from { opacity: 0; }
     to   { opacity: 1; }
   }

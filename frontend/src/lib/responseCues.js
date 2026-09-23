@@ -1,12 +1,15 @@
 // responseCues.js — Detects contextual visual cues from assistant responses.
 // Grounded directly in knowledge_base.json facts for:
 // 1. Certifications (OutSystems O11/ODC, Angular, Neutrinos)
-// 2. Achievements & Awards (Laurel Award, Best Team Player, 53% DB optimization, 4.3★ DevTools)
+// 2. Achievements & Awards (Laurel Award, Best Team Player, 53% DB optimization, 4.3★ DevTools, Bentley)
 // 3. Technologies & Architecture (OutSystems, React, Angular, Cordova, Local AI, Homelab)
 // 4. Contact channels
 
+const BASE = import.meta.env.BASE_URL || '/'
+const badge = (file) => `${BASE.replace(/\/$/, '')}/assets/badges/${file}`
+
 export const ISSUER_COLORS = {
-  OutSystems: "#ff3e5f",
+  OutSystems: "#ff2400",
   Angular: "#dd0031",
   Neutrinos: "#5b8def",
   Mphasis: "#f59e0b",
@@ -25,10 +28,11 @@ export const CERTIFICATIONS = [
     category: "cert",
     categoryLabel: "CERTIFICATION",
     label: "Tech Lead",
-    sub: "OutSystems O11",
-    tag: "O11 ARCHITECTURE",
+    sub: "OutSystems O11 Architecture",
+    tag: "TECH LEAD",
     issuer: "OutSystems",
-    accent: "#ff3e5f",
+    accent: "#ff2400",
+    image: badge("outsystems-mark.svg"),
     icon: "outsystems",
     outsystems: true,
     keywords: ["tech lead", "technical lead", "architecture certification", "lead cert"]
@@ -37,11 +41,12 @@ export const CERTIFICATIONS = [
     id: "os-frontend",
     category: "cert",
     categoryLabel: "CERTIFICATION",
-    label: "Front-end Specialist",
+    label: "Front-end Spec.",
     sub: "O11 & ODC Platforms",
-    tag: "O11 & ODC",
+    tag: "FRONT-END",
     issuer: "OutSystems",
-    accent: "#ff3e5f",
+    accent: "#ff2400",
+    image: badge("outsystems-mark.svg"),
     icon: "outsystems",
     outsystems: true,
     keywords: ["front-end developer specialist", "frontend developer specialist", "front end specialist", "frontend specialist"]
@@ -50,11 +55,12 @@ export const CERTIFICATIONS = [
     id: "os-associate-odc",
     category: "cert",
     categoryLabel: "CERTIFICATION",
-    label: "Associate Developer",
-    sub: "OutSystems Cloud (ODC)",
+    label: "Associate Dev",
+    sub: "OutSystems Developer Cloud",
     tag: "ODC CLOUD",
     issuer: "OutSystems",
-    accent: "#ff3e5f",
+    accent: "#ff2400",
+    image: badge("outsystems-mark.svg"),
     icon: "outsystems",
     outsystems: true,
     keywords: ["associate developer", "odc cert", "developer cloud"]
@@ -65,9 +71,10 @@ export const CERTIFICATIONS = [
     categoryLabel: "CERTIFICATION",
     label: "Mobile Specialist",
     sub: "O11 & ODC Hybrid Apps",
-    tag: "MOBILE & CORDOVA",
+    tag: "MOBILE DEV",
     issuer: "OutSystems",
-    accent: "#ff3e5f",
+    accent: "#ff2400",
+    image: badge("outsystems-mark.svg"),
     icon: "outsystems",
     outsystems: true,
     keywords: ["mobile developer specialist", "mobile developer", "mobile spec"]
@@ -76,11 +83,12 @@ export const CERTIFICATIONS = [
     id: "os-reactive",
     category: "cert",
     categoryLabel: "CERTIFICATION",
-    label: "Reactive Developer",
-    sub: "OutSystems O11",
-    tag: "REACTIVE WEB",
+    label: "Reactive Dev",
+    sub: "OutSystems O11 Reactive",
+    tag: "REACTIVE",
     issuer: "OutSystems",
-    accent: "#ff3e5f",
+    accent: "#ff2400",
+    image: badge("outsystems-mark.svg"),
     icon: "outsystems",
     outsystems: true,
     keywords: ["reactive developer", "reactive cert", "associate reactive"]
@@ -90,10 +98,11 @@ export const CERTIFICATIONS = [
     category: "cert",
     categoryLabel: "CERTIFICATION",
     label: "Angular Complete",
-    sub: "Full Architecture Guide",
-    tag: "UDEMY CERTIFIED",
+    sub: "Udemy Full Architecture",
+    tag: "ANGULAR",
     issuer: "Angular",
     accent: "#dd0031",
+    image: badge("angular.svg"),
     icon: "angular",
     outsystems: false,
     keywords: ["angular"]
@@ -104,9 +113,10 @@ export const CERTIFICATIONS = [
     categoryLabel: "CERTIFICATION",
     label: "Certified Pro Dev",
     sub: "Neutrinos Low-Code Platform",
-    tag: "PRO DEVELOPER",
+    tag: "NEUTRINOS",
     issuer: "Neutrinos",
     accent: "#5b8def",
+    image: badge("neutrinos.svg"),
     icon: "neutrinos",
     outsystems: false,
     keywords: ["neutrinos", "neutrinos certified"]
@@ -120,9 +130,10 @@ export const ACHIEVEMENTS = [
     categoryLabel: "HONOR & AWARD",
     label: "Laurel Award",
     sub: "Mphasis Engineering Excellence",
-    tag: "ENTERPRISE AWARD",
+    tag: "MPHASIS AWARD",
     issuer: "Mphasis",
     accent: "#f59e0b",
+    image: badge("mphasis.png"),
     icon: "trophy",
     keywords: ["laurel award", "laurel", "mphasis award", "award at mphasis"]
   },
@@ -131,10 +142,11 @@ export const ACHIEVEMENTS = [
     category: "achievement",
     categoryLabel: "HONOR & AWARD",
     label: "Best Team Player",
-    sub: "Neutrinos Professional Recognition",
-    tag: "LEADERSHIP AWARD",
+    sub: "Neutrinos Excellence Award",
+    tag: "NEUTRINOS AWARD",
     issuer: "Neutrinos",
     accent: "#f59e0b",
+    image: badge("neutrinos.svg"),
     icon: "trophy",
     keywords: ["best team player", "team player award", "neutrinos award"]
   },
@@ -143,10 +155,11 @@ export const ACHIEVEMENTS = [
     category: "achievement",
     categoryLabel: "MILESTONE",
     label: "53% Query Boost",
-    sub: "Data Model & Query Restructuring",
-    tag: "PERFORMANCE",
+    sub: "Data Model Restructuring",
+    tag: "OPTIMIZATION",
     issuer: "Performance",
     accent: "#10b981",
+    image: badge("postgresql.svg"),
     icon: "speedometer",
     keywords: ["53%", "performance improvement", "restructuring", "query architecture", "eliminated duplicate entities"]
   },
@@ -154,11 +167,12 @@ export const ACHIEVEMENTS = [
     id: "devtools-ext",
     category: "achievement",
     categoryLabel: "FEATURED PROJECT",
-    label: "OutSystems DevTools",
-    sub: "Chrome Web Store (4.3★ Rating)",
-    tag: "GLOBAL ADOPTION",
+    label: "OS DevTools",
+    sub: "Chrome Web Store (4.3★)",
+    tag: "CHROME EXT",
     issuer: "Chrome",
     accent: "#38bdf8",
+    image: badge("chrome.svg"),
     icon: "devtools",
     keywords: ["devtools", "chrome extension", "web store", "4.3", "application inspection"]
   },
@@ -166,11 +180,12 @@ export const ACHIEVEMENTS = [
     id: "bentley-dealer",
     category: "achievement",
     categoryLabel: "ENTERPRISE MILESTONE",
-    label: "Bentley Motors Project",
-    sub: "Dealer Award Systems Architecture",
-    tag: "ONWARD TECH",
+    label: "Bentley Motors",
+    sub: "Dealer Award System Architect",
+    tag: "AUTOMOTIVE",
     issuer: "Bentley",
     accent: "#a855f7",
+    image: badge("bentley.svg"),
     icon: "bentley",
     keywords: ["bentley", "bentley motors", "dealer award", "automotive"]
   },
@@ -182,10 +197,11 @@ export const TECH_STACK = [
     category: "tech",
     categoryLabel: "CORE ARCHITECTURE",
     label: "OutSystems O11 & ODC",
-    sub: "Enterprise Reactive & Cloud-Native",
-    tag: "8+ YEARS EXP",
+    sub: "Enterprise Reactive & Cloud",
+    tag: "OUTSYSTEMS",
     issuer: "OutSystems",
-    accent: "#ff3e5f",
+    accent: "#ff2400",
+    image: badge("outsystems-mark.svg"),
     icon: "outsystems",
     keywords: ["outsystems", "odc", "o11", "service studio"]
   },
@@ -194,10 +210,11 @@ export const TECH_STACK = [
     category: "tech",
     categoryLabel: "FRONTEND STACK",
     label: "React & TypeScript",
-    sub: "DevTools v3 & Modular UI",
-    tag: "SPA & EXTENSIONS",
+    sub: "DevTools v3 & Modern SPA",
+    tag: "REACT",
     issuer: "React",
     accent: "#61dafb",
+    image: badge("react.svg"),
     icon: "react",
     keywords: ["react", "typescript", "chrome debugger", "cdp"]
   },
@@ -206,10 +223,11 @@ export const TECH_STACK = [
     category: "tech",
     categoryLabel: "FRONTEND STACK",
     label: "Angular Framework",
-    sub: "Enterprise Web Applications",
-    tag: "CERTIFIED",
+    sub: "Enterprise Applications",
+    tag: "ANGULAR",
     issuer: "Angular",
     accent: "#dd0031",
+    image: badge("angular.svg"),
     icon: "angular",
     keywords: ["angular framework", "angular developer"]
   },
@@ -218,10 +236,11 @@ export const TECH_STACK = [
     category: "tech",
     categoryLabel: "HYBRID MOBILE",
     label: "Cordova & Capacitor",
-    sub: "Native Mobile Plugin Integration",
-    tag: "IOS & ANDROID",
+    sub: "Native Mobile Plugins",
+    tag: "CORDOVA",
     issuer: "Mobile",
     accent: "#38bdf8",
+    image: badge("cordova.svg"),
     icon: "mobile",
     keywords: ["cordova", "capacitor", "hybrid mobile", "native plugin", "native plugins"]
   },
@@ -229,11 +248,12 @@ export const TECH_STACK = [
     id: "tech-ai",
     category: "tech",
     categoryLabel: "ON-DEVICE AI",
-    label: "Local LLMs & llama.cpp",
-    sub: "Quantized Gemma & Whisper on ARM",
-    tag: "SELF-HOSTED AI",
+    label: "Local LLMs",
+    sub: "llama.cpp on ARM & Gemma",
+    tag: "LOCAL AI",
     issuer: "AI",
     accent: "#10b981",
+    image: badge("python.svg"),
     icon: "brain",
     keywords: ["llama.cpp", "quantized", "small language model", "on-device ai", "local ai", "whisper", "piper"]
   },
@@ -241,11 +261,12 @@ export const TECH_STACK = [
     id: "tech-homelab",
     category: "tech",
     categoryLabel: "HOMELAB & DEVOPS",
-    label: "Raspberry Pi 5 Server",
-    sub: "Nginx, SQLite, Linux & HostPanel",
-    tag: "SELF-HOSTED",
+    label: "Raspberry Pi 5",
+    sub: "Nginx, Linux & HostPanel",
+    tag: "PI 5 SERVER",
     issuer: "Homelab",
     accent: "#ec4899",
+    image: badge("raspberrypi.svg"),
     icon: "server",
     keywords: ["raspberry pi", "homelab", "hostpanel", "pi 5", "nginx", "sqlite"]
   },
@@ -267,20 +288,17 @@ const GENERIC_TECH_RE = /\b(tech stack|technologies|skills|languages|frameworks|
 
 const MAX_SHOWCASE = 5
 
-// Detects contextual showcase cards matching the response text.
-// Returns an array of items (up to MAX_SHOWCASE) from Certifications, Achievements, or Tech Stack.
 export function detectShowcaseItems(text) {
   if (!text) return []
   const t = text.toLowerCase()
 
-  // 1. Direct specific keyword matching across all catalogs
+  // 1. Direct specific keyword matching
   const matchedCerts = CERTIFICATIONS.filter((c) => c.keywords.some((k) => t.includes(k)))
   const matchedAchievements = ACHIEVEMENTS.filter((a) => a.keywords.some((k) => t.includes(k)))
   const matchedTech = TECH_STACK.filter((s) => s.keywords.some((k) => t.includes(k)))
 
   const directMatches = [...matchedCerts, ...matchedAchievements, ...matchedTech]
   if (directMatches.length > 0) {
-    // Deduplicate by ID
     const seen = new Set()
     const result = []
     for (const item of directMatches) {
@@ -292,7 +310,7 @@ export function detectShowcaseItems(text) {
     return result.slice(0, MAX_SHOWCASE)
   }
 
-  // 2. High-level category fallbacks for broad questions
+  // 2. Category fallbacks
   if (GENERIC_AWARD_RE.test(text)) {
     return ACHIEVEMENTS.slice(0, MAX_SHOWCASE)
   }
@@ -308,7 +326,6 @@ export function detectShowcaseItems(text) {
   return []
 }
 
-// Backward-compatible helper for code still referencing detectCertifications
 export function detectCertifications(text) {
   if (!text) return []
   const t = text.toLowerCase()
@@ -327,7 +344,6 @@ const CONTACT_KEYWORDS = [
 ]
 const CONTACT_URL_RE = /(@[\w.-]+\.\w+|linkedin\.com|github\.com|gokulakannan\.dev)/i
 
-// True when the answer is about reaching out to Gokul.
 export function isContactRelevant(text) {
   if (!text) return false
   const t = text.toLowerCase()
