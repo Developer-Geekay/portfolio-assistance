@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import useVoiceAssistant from '../hooks/useVoiceAssistant'
 import { USE_WHISPER_WASM, USE_PIPER_WASM } from '../features'
 import LoaderParticles from './LoaderParticles'
-import ShowcaseSpotlight from './ShowcaseSpotlight'
+import OrbitalMoons from './OrbitalMoons'
 import ContactCard from './ContactCard'
 import { detectShowcaseItems, isContactRelevant } from '../lib/responseCues'
 import './Stage.css'
@@ -106,14 +106,16 @@ export default function Stage() {
     }
   }, [transcript])
 
-  // ── response cues: showcase spotlight + contact card ──────────────
+  // ── response cues: orbital moons + contact card ───────────────────
   // Cues are driven by the spoken answer: detection runs when the answer
-  // arrives (at speech onset). The spotlight deck stays active while speaking
-  // and lingers for a grace period after speech ends (same as contact card).
+  // arrives (at speech onset). Contextual moons orbit around the Earth sphere
+  // with staggered pop-ins, stay active while speaking, and linger gracefully.
   const [showcaseItems, setShowcaseItems] = useState([])
+  const [showcaseExiting, setShowcaseExiting] = useState(false)
   const [showContact, setShowContact] = useState(false)
   const showContactRef = useRef(false)
   const showcaseTimerRef = useRef(null)
+  const exitTimerRef = useRef(null)
   const contactTimerRef = useRef(null)
   useEffect(() => { showContactRef.current = showContact }, [showContact])
 
@@ -124,7 +126,12 @@ export default function Stage() {
 
   const closeShowcase = useCallback(() => {
     clearTimeout(showcaseTimerRef.current)
-    setShowcaseItems([])
+    clearTimeout(exitTimerRef.current)
+    setShowcaseExiting(true)
+    setTimeout(() => {
+      setShowcaseItems([])
+      setShowcaseExiting(false)
+    }, 450)
   }, [])
 
   const runDetection = useCallback((text) => {
@@ -132,6 +139,8 @@ export default function Stage() {
     const items = detectShowcaseItems(text)
     if (items.length) {
       clearTimeout(showcaseTimerRef.current)
+      clearTimeout(exitTimerRef.current)
+      setShowcaseExiting(false)
       setShowcaseItems(items)
     }
     if (isContactRelevant(text)) {
@@ -145,15 +154,25 @@ export default function Stage() {
     runDetection(answer.text)
   }, [answer.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // keep spotlight active while speaking; wind cues down after speech ends
+  // keep orbital moons active while speaking; wind cues down after speech ends
   useEffect(() => {
     if (state === 'speaking') {
       clearTimeout(contactTimerRef.current)
       clearTimeout(showcaseTimerRef.current)
+      clearTimeout(exitTimerRef.current)
+      setShowcaseExiting(false)
     } else {
       if (showcaseItems.length) {
         clearTimeout(showcaseTimerRef.current)
-        showcaseTimerRef.current = setTimeout(() => setShowcaseItems([]), 7000)
+        clearTimeout(exitTimerRef.current)
+        // Linger in orbit for 11 seconds after speaking so all items are admired
+        showcaseTimerRef.current = setTimeout(() => {
+          setShowcaseExiting(true)
+          exitTimerRef.current = setTimeout(() => {
+            setShowcaseItems([])
+            setShowcaseExiting(false)
+          }, 500)
+        }, 11000)
       }
       if (showContactRef.current) {
         clearTimeout(contactTimerRef.current)
@@ -164,6 +183,7 @@ export default function Stage() {
 
   useEffect(() => () => {
     clearTimeout(showcaseTimerRef.current)
+    clearTimeout(exitTimerRef.current)
     clearTimeout(contactTimerRef.current)
   }, [])
 
@@ -590,9 +610,13 @@ export default function Stage() {
         <p ref={transcriptRef} className="transcript">{transcript || (state === 'listening' ? '· · ·' : '')}</p>
       )}
 
-      {/* response cues */}
+      {/* response cues: celestial moons orbiting the Earth-sphere */}
       {showcaseItems.length > 0 && (
-        <ShowcaseSpotlight items={showcaseItems} onClose={closeShowcase} />
+        <OrbitalMoons
+          items={showcaseItems}
+          isExiting={showcaseExiting}
+          onClose={closeShowcase}
+        />
       )}
       {showContact && <ContactCard onClose={closeContact} />}
 
