@@ -122,7 +122,14 @@ export default function useVoiceAssistant() {
   const outCtxRef      = useRef(null)
   const outAnalyserRef = useRef(null)
 
-  const setBoth = (s) => { stateRef.current = s; setState(s) }
+  const setBoth = useCallback((s) => { stateRef.current = s; setState(s) }, [])
+  const isUnmountedRef      = useRef(false)
+  const pingTimerRef        = useRef(null)
+  const handleWsMessageRef  = useRef(null)
+  const whisperModeRef      = useRef(whisperMode)
+  whisperModeRef.current    = whisperMode
+  const piperModeRef        = useRef(piperMode)
+  piperModeRef.current      = piperMode
 
   // Load settings on mount
   useEffect(() => {
@@ -355,6 +362,8 @@ export default function useVoiceAssistant() {
     }
   }, [captionsEnabledRef, setBoth])
 
+  handleWsMessageRef.current = handleWsMessage
+
   const getWsUrl = useCallback(() => {
     let base = API_BASE
     if (!base.startsWith('http')) {
@@ -367,6 +376,7 @@ export default function useVoiceAssistant() {
   }, [])
 
   const connectWs = useCallback(() => {
+    if (isUnmountedRef.current) return null
     if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
       return wsRef.current
     }
@@ -375,38 +385,62 @@ export default function useVoiceAssistant() {
       const ws = new WebSocket(url)
       wsRef.current = ws
 
+      ws.onopen = () => {
+        clearInterval(pingTimerRef.current)
+        pingTimerRef.current = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            try { ws.send(JSON.stringify({ type: 'ping' })) } catch {}
+          }
+        }, 20000)
+      }
+
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data)
-          handleWsMessage(msg)
+          handleWsMessageRef.current?.(msg)
         } catch (e) {
           console.warn('[voice-ws] Parse error:', e)
         }
       }
+
       ws.onerror = (e) => {
         console.warn('[voice-ws] Socket error, HTTP fallback available:', e)
       }
+
       ws.onclose = () => {
+        clearInterval(pingTimerRef.current)
         wsRef.current = null
-        setTimeout(() => {
-          if (whisperMode !== 'wasm' && piperMode !== 'wasm') {
-            connectWs()
-          }
-        }, 2000)
+        if (!isUnmountedRef.current && whisperModeRef.current !== 'wasm' && piperModeRef.current !== 'wasm') {
+          setTimeout(() => {
+            if (!isUnmountedRef.current && whisperModeRef.current !== 'wasm' && piperModeRef.current !== 'wasm') {
+              connectWs()
+            }
+          }, 3000)
+        }
       }
       return ws
     } catch (e) {
       console.warn('[voice-ws] Connect error:', e)
       return null
     }
-  }, [getWsUrl, handleWsMessage, whisperMode, piperMode])
+  }, [getWsUrl])
 
   useEffect(() => {
+    isUnmountedRef.current = false
     if (whisperMode !== 'wasm' && piperMode !== 'wasm') {
       connectWs()
+    } else {
+      if (wsRef.current) {
+        clearInterval(pingTimerRef.current)
+        wsRef.current.close()
+        wsRef.current = null
+      }
     }
     return () => {
+      isUnmountedRef.current = true
+      clearInterval(pingTimerRef.current)
       wsRef.current?.close()
+      wsRef.current = null
     }
   }, [connectWs, whisperMode, piperMode])
 

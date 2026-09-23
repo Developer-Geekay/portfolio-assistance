@@ -53,13 +53,24 @@ loaded_voices = {}   # piper voice cache
 
 # Available voices config
 VOICES_LIST = [
-    {"id": "en_US-amy-medium", "name": "Amy (Medium)"},
-    {"id": "en_US-lessac-medium", "name": "Lessac (Medium)"},
-    {"id": "en_US-joe-medium", "name": "Joe (Medium)"},
-    {"id": "en_US-ryan-medium", "name": "Ryan (Medium)"}
+    {"id": "af_sarah", "name": "Kokoro - Sarah (US Female, Natural)"},
+    {"id": "af_bella", "name": "Kokoro - Bella (US Female, Expressive)"},
+    {"id": "am_michael", "name": "Kokoro - Michael (US Male, Warm)"},
+    {"id": "bf_emma", "name": "Kokoro - Emma (UK Female, Human)"},
+    {"id": "en_US-amy-medium", "name": "Piper - Amy (Medium)"},
+    {"id": "en_US-lessac-medium", "name": "Piper - Lessac (Medium)"},
+    {"id": "en_US-joe-medium", "name": "Piper - Joe (Medium)"},
+    {"id": "en_US-ryan-medium", "name": "Piper - Ryan (Medium)"}
 ]
 
+KOKORO_ONNX_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.0.onnx"
+KOKORO_VOICES_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/voices-v1.0.bin"
+
 VOICE_URLS = {
+    "af_sarah": {"onnx": KOKORO_ONNX_URL, "voices": KOKORO_VOICES_URL},
+    "af_bella": {"onnx": KOKORO_ONNX_URL, "voices": KOKORO_VOICES_URL},
+    "am_michael": {"onnx": KOKORO_ONNX_URL, "voices": KOKORO_VOICES_URL},
+    "bf_emma": {"onnx": KOKORO_ONNX_URL, "voices": KOKORO_VOICES_URL},
     "en_US-amy-medium": {
         "onnx": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/amy/medium/en_US-amy-medium.onnx",
         "json": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/amy/medium/en_US-amy-medium.onnx.json"
@@ -82,6 +93,10 @@ download_progress = {} # voice_id -> int
 download_threads = {}  # voice_id -> Thread
 
 def is_voice_downloaded(voice_id: str) -> bool:
+    if any(voice_id.startswith(p) for p in ("af_", "am_", "bf_", "bm_", "kokoro")):
+        model_paths = ["models/tts/kokoro-v1.0.onnx", "models/tts/kokoro-v1.0.fp16.onnx", "models/tts/kokoro.onnx"]
+        voices_path = "models/tts/voices-v1.0.bin"
+        return any(os.path.exists(p) for p in model_paths) and os.path.exists(voices_path)
     onnx_path = f"models/tts/{voice_id}.onnx"
     json_path = f"models/tts/{voice_id}.onnx.json"
     return os.path.exists(onnx_path) and os.path.exists(json_path)
@@ -114,6 +129,20 @@ def download_voice_model_task(voice_id: str):
         return
     download_progress[voice_id] = 0
     urls = VOICE_URLS[voice_id]
+
+    if any(voice_id.startswith(p) for p in ("af_", "am_", "bf_", "bm_", "kokoro")):
+        onnx_dest = "models/tts/kokoro-v1.0.onnx"
+        voices_dest = "models/tts/voices-v1.0.bin"
+        download_file_chunked(urls["voices"], voices_dest, voice_id, weight=0.1, offset=0.0)
+        if download_progress[voice_id] == -1:
+            return
+        download_file_chunked(urls["onnx"], onnx_dest, voice_id, weight=0.9, offset=10.0)
+        if download_progress[voice_id] == -1:
+            return
+        download_progress[voice_id] = 100
+        get_kokoro()
+        return
+
     onnx_dest = f"models/tts/{voice_id}.onnx"
     json_dest = f"models/tts/{voice_id}.onnx.json"
     
@@ -400,8 +429,53 @@ def transcribe(audio: UploadFile = File(...)):
     return {"text": text}
 
 
+kokoro_instance = None
+
+def get_kokoro():
+    global kokoro_instance
+    if kokoro_instance is not None:
+        return kokoro_instance
+    model_paths = [
+        "models/tts/kokoro-v1.0.onnx",
+        "models/tts/kokoro-v1.0.fp16.onnx",
+        "models/tts/kokoro.onnx"
+    ]
+    voices_path = "models/tts/voices-v1.0.bin"
+    model_path = next((p for p in model_paths if os.path.exists(p)), None)
+    if model_path and os.path.exists(voices_path):
+        try:
+            from kokoro_onnx import Kokoro
+            kokoro_instance = Kokoro(model_path, voices_path)
+            print(f"Kokoro-82M TTS loaded from {model_path}")
+            return kokoro_instance
+        except Exception as e:
+            print(f"Failed to load Kokoro TTS: {e}")
+            return None
+    return None
+
+
 def synthesize_wav_bytes(text: str, voice_id: str | None = None) -> bytes:
     vid = voice_id or get_setting("piper_voice", "en_US-amy-medium")
+
+    # If Kokoro voice requested or configured
+    if any(vid.startswith(p) for p in ("af_", "am_", "bf_", "bm_", "kokoro")):
+        k = get_kokoro()
+        if k is not None:
+            try:
+                k_voice = vid if vid != "kokoro" else "af_sarah"
+                samples, sample_rate = k.create(text, voice=k_voice, speed=1.0, lang="en-us")
+                import numpy as np
+                int16_samples = (np.clip(samples, -1.0, 1.0) * 32767).astype(np.int16)
+                buf = io.BytesIO()
+                with wave.open(buf, "wb") as f:
+                    f.setnchannels(1)
+                    f.setsampwidth(2)
+                    f.setframerate(sample_rate)
+                    f.writeframes(int16_samples.tobytes())
+                return buf.getvalue()
+            except Exception as e:
+                print(f"[kokoro] Synthesis error: {e}, falling back to Piper")
+
     global loaded_voices
     if vid not in loaded_voices:
         onnx_path = f"models/tts/{vid}.onnx"

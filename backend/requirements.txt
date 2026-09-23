@@ -8,4 +8,6 @@ faster-whisper
 piper-tts
 numpy
 websockets
+kokoro-onnx
+soundfile
 
