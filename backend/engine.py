@@ -12,6 +12,7 @@ MODEL_PATH   = os.environ.get("LLM_MODEL", "models/generator/gemma-4-E4B_q4_0-it
 KB_PATH      = os.environ.get("KB_PATH", "knowledge_base.json")
 QA_INDEX     = os.environ.get("QA_INDEX", "index/qa_flows.json")
 N_THREADS    = int(os.environ.get("LLM_THREADS", "4"))
+N_CTX        = int(os.environ.get("LLM_CTX", "8192"))
 # 0 = CPU only, -1 = offload all layers to GPU (CUDA/Metal), N = partial offload.
 # Safe on CPU-only installs: llama.cpp ignores it when no GPU backend is built in.
 N_GPU_LAYERS = int(os.environ.get("LLM_GPU_LAYERS", "0"))
@@ -95,7 +96,7 @@ def _detect_category(question: str) -> str:
             return cat
     return "mixed"
 
-def _get_qa_examples(question: str, n: int = 3) -> str:
+def _get_qa_examples(question: str, n: int = 1) -> str:
     """Returns a few-shot block of n Q&A examples relevant to the question."""
     if not _qa_by_category:
         return ""
@@ -254,13 +255,13 @@ def load_model():
 
     llm = Llama(
         model_path=model_file,
-        n_ctx=4096,
+        n_ctx=N_CTX,
         n_threads=N_THREADS,
         n_gpu_layers=N_GPU_LAYERS,
         verbose=False,
         chat_format="gemma",
     )
-    print(f"Model ready ({model_file}).")
+    print(f"Model ready ({model_file}, context={N_CTX}).")
 
 
 def reload_kb():
@@ -287,14 +288,30 @@ def ask(question: str, history: list | None = None) -> str:
     else:
         messages.append({"role": "user", "content": _system_prompt + "\n\n" + current_msg})
 
-    response = llm.create_chat_completion(
-        messages=messages,
-        max_tokens=220,
-        temperature=0.18,
-        repeat_penalty=1.18,
-        stop=["<end_of_turn>", "\n\n\n", "\nQuestion", "\nUser"],
-    )
-    return _clean_response(response["choices"][0]["message"]["content"].strip())
+    try:
+        response = llm.create_chat_completion(
+            messages=messages,
+            max_tokens=220,
+            temperature=0.18,
+            repeat_penalty=1.18,
+            stop=["<end_of_turn>", "\n\n\n", "\nQuestion", "\nUser"],
+        )
+        return _clean_response(response["choices"][0]["message"]["content"].strip())
+    except ValueError as e:
+        # If requested tokens exceed context window on long multi-turn sessions,
+        # drop history and ask with system prompt directly to guarantee a response.
+        if "exceed context" in str(e).lower() and len(messages) > 1:
+            print("[engine] Context limit reached, retrying with direct single-turn prompt...")
+            fallback_msgs = [{"role": "user", "content": _system_prompt + "\n\nQuestion: " + question}]
+            response = llm.create_chat_completion(
+                messages=fallback_msgs,
+                max_tokens=180,
+                temperature=0.18,
+                repeat_penalty=1.18,
+                stop=["<end_of_turn>", "\n\n\n", "\nQuestion", "\nUser"],
+            )
+            return _clean_response(response["choices"][0]["message"]["content"].strip())
+        raise
 
 
 def _clean_response(text: str) -> str:
