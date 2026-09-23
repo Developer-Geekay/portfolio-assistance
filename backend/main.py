@@ -22,7 +22,10 @@ import asyncio
 import base64
 
 from dotenv import load_dotenv
-load_dotenv(override=True)   # backend/.env — loaded before engine reads its env vars
+_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+if os.path.exists(_env_path):
+    load_dotenv(dotenv_path=_env_path, override=True)
+load_dotenv(override=True)   # Fallback to CWD .env if any
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -450,23 +453,38 @@ def get_kokoro():
     global kokoro_instance
     if kokoro_instance is not None:
         return kokoro_instance
+    base_dir = os.path.dirname(os.path.abspath(__file__))
     model_paths = [
+        os.path.join(base_dir, "models", "tts", "kokoro-v1.0.onnx"),
+        os.path.join(base_dir, "models", "tts", "kokoro-v1.0.fp16.onnx"),
+        os.path.join(base_dir, "models", "tts", "kokoro.onnx"),
         "models/tts/kokoro-v1.0.onnx",
         "models/tts/kokoro-v1.0.fp16.onnx",
         "models/tts/kokoro.onnx"
     ]
-    voices_path = "models/tts/voices-v1.0.bin"
+    voices_paths = [
+        os.path.join(base_dir, "models", "tts", "voices-v1.0.bin"),
+        "models/tts/voices-v1.0.bin"
+    ]
     model_path = next((p for p in model_paths if os.path.exists(p)), None)
-    if model_path and os.path.exists(voices_path):
-        try:
-            from kokoro_onnx import Kokoro
-            kokoro_instance = Kokoro(model_path, voices_path)
-            print(f"Kokoro-82M TTS loaded from {model_path}")
-            return kokoro_instance
-        except Exception as e:
-            print(f"Failed to load Kokoro TTS: {e}")
-            return None
-    return None
+    voices_path = next((p for p in voices_paths if os.path.exists(p)), None)
+    if not model_path:
+        print("[kokoro] kokoro-v1.0.onnx not found in models/tts/")
+        return None
+    if not voices_path:
+        print("[kokoro] voices-v1.0.bin not found in models/tts/")
+        return None
+    try:
+        from kokoro_onnx import Kokoro
+        kokoro_instance = Kokoro(model_path, voices_path)
+        print(f"Kokoro-82M TTS loaded from {model_path}")
+        return kokoro_instance
+    except ImportError:
+        print("[kokoro] kokoro-onnx package is not installed. Run: pip install kokoro-onnx soundfile")
+        return None
+    except Exception as e:
+        print(f"[kokoro] Failed to load Kokoro TTS: {e}")
+        return None
 
 
 def synthesize_wav_bytes(text: str, voice_id: str | None = None) -> bytes:
