@@ -324,6 +324,98 @@ def ask(question: str, history: list | None = None) -> str:
         raise
 
 
+_ABBREVIATIONS = {"e.g.", "i.e.", "etc.", "mr.", "ms.", "dr.", "vs.", "approx."}
+_SENTENCE_SPLIT_REGEX = re.compile(r"([.!?]+(?:\s+|\Z)|\n+)")
+
+
+def ask_stream(question: str, history: list | None = None):
+    """Generator yielding complete, cleaned sentences in real time as Gemma
+    generates tokens. Enables pipelined TTS synthesis for sub-800ms TTFA."""
+    recent = (history or [])[-3:]
+    messages = []
+
+    if recent:
+        messages.append({"role": "user",      "content": _system_prompt + "\n\nQuestion: " + recent[0]["q"]})
+        messages.append({"role": "assistant", "content": recent[0]["a"]})
+        for turn in recent[1:]:
+            messages.append({"role": "user",      "content": "Question: " + turn["q"]})
+            messages.append({"role": "assistant", "content": turn["a"]})
+        messages.append({"role": "user", "content": "Question: " + question})
+    else:
+        messages.append({"role": "user", "content": _system_prompt + "\n\nQuestion: " + question})
+
+    stop_tokens = [
+        "<end_of_turn>",
+        "<start_of_turn>",
+        "\n<start_of_turn>",
+        "<eos>",
+        "\nQuestion:",
+        "\nUser:",
+        "\nQ:",
+        "\nHuman:",
+        "\n\n\n",
+    ]
+
+    try:
+        stream = llm.create_chat_completion(
+            messages=messages,
+            max_tokens=160,
+            temperature=0.18,
+            repeat_penalty=1.18,
+            stop=stop_tokens,
+            stream=True,
+        )
+    except ValueError as e:
+        if "exceed context" in str(e).lower() and len(messages) > 1:
+            print("[engine] Context limit reached in stream, retrying with direct single-turn prompt...")
+            fallback_msgs = [{"role": "user", "content": _system_prompt + "\n\nQuestion: " + question}]
+            stream = llm.create_chat_completion(
+                messages=fallback_msgs,
+                max_tokens=130,
+                temperature=0.18,
+                repeat_penalty=1.18,
+                stop=stop_tokens,
+                stream=True,
+            )
+        else:
+            raise
+
+    buffer = ""
+    for chunk in stream:
+        delta = chunk["choices"][0].get("delta", {})
+        token = delta.get("content", "")
+        if not token:
+            continue
+
+        if "<start_of_turn>" in token or "<end_of_turn>" in token:
+            break
+
+        buffer += token
+        parts = _SENTENCE_SPLIT_REGEX.split(buffer)
+        if len(parts) > 2:
+            while len(parts) > 2:
+                candidate = parts[0] + parts[1]
+                words = candidate.strip().split()
+                last_word = words[-1].lower() if words else ""
+                if last_word in _ABBREVIATIONS or re.search(r"\d\.\s*$", candidate):
+                    parts[2] = candidate + parts[2]
+                    parts.pop(0)
+                    parts.pop(0)
+                    continue
+
+                parts.pop(0)
+                parts.pop(0)
+                sent = _clean_response(candidate.strip())
+                if sent:
+                    yield sent
+            buffer = parts[0]
+
+    if buffer.strip():
+        final_sent = _clean_response(buffer.strip())
+        if final_sent:
+            yield final_sent
+
+
 def _clean_response(text: str) -> str:
     """Clean response: remove trailing sentence fragments, turn markers, and boilerplate."""
     # First, truncate if any turn marker or leaked role tag appeared

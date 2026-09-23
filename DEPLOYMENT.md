@@ -175,13 +175,16 @@ server {
         # add_header Cross-Origin-Opener-Policy   same-origin;
     }
 
-    # backend
+    # backend (supports HTTP endpoints + WebSocket streaming at /api/ws/voice)
     location /api/ {
         proxy_pass http://127.0.0.1:16000/;   # trailing slash strips /api
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header Host $host;
         client_max_body_size 25m;             # voice recordings
-        proxy_read_timeout 120s;              # LLM inference time
+        proxy_read_timeout 300s;              # Keep alive WebSocket connection
     }
 }
 ```

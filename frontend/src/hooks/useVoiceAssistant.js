@@ -38,6 +38,16 @@ function pickRecordingFormat() {
   return candidates.find(c => window.MediaRecorder && MediaRecorder.isTypeSupported(c.mime))
 }
 
+function b64ToBlob(b64Data, contentType = 'audio/wav') {
+  const byteCharacters = atob(b64Data)
+  const byteNumbers = new Array(byteCharacters.length)
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i)
+  }
+  const byteArray = new Uint8Array(byteNumbers)
+  return new Blob([byteArray], { type: contentType })
+}
+
 // Fully self-hosted voice loop:
 //   mic → MediaRecorder → Whisper WASM (browser) → /ask (Pi) → /speak (Piper) → <audio>
 // state machine: idle | listening | processing | speaking
@@ -96,6 +106,16 @@ export default function useVoiceAssistant() {
   const spokeAtRef    = useRef(0)       // last time speech was detected
   const heardRef      = useRef(false)   // any speech at all this round
   const turnsRef      = useRef(0)       // answered questions this conversation
+
+  // WebSocket streaming state and audio queue
+  const wsRef               = useRef(null)
+  const playQueueRef        = useRef([])
+  const isPlayingQueueRef   = useRef(false)
+  const isDoneStreamingRef  = useRef(false)
+  const shouldEndRef        = useRef(false)
+  const currentChunkUrlRef  = useRef(null)
+  const pendingHistoryRef   = useRef(null)
+  const activeUserQueryRef  = useRef('')
 
   // Shared playback chain — created once on the first user click (iOS unlock)
   const audioElRef     = useRef(null)
@@ -212,6 +232,184 @@ export default function useVoiceAssistant() {
     if (el) { el.pause(); el.removeAttribute('src') }
   }, [])
 
+  const interrupt = useCallback(() => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      try { wsRef.current.send(JSON.stringify({ type: 'interrupt' })) } catch {}
+    }
+    if (currentChunkUrlRef.current) {
+      URL.revokeObjectURL(currentChunkUrlRef.current)
+      currentChunkUrlRef.current = null
+    }
+    playQueueRef.current.forEach(item => URL.revokeObjectURL(item.url))
+    playQueueRef.current = []
+    isPlayingQueueRef.current = false
+    isDoneStreamingRef.current = false
+    pendingHistoryRef.current = null
+    stopPlayback()
+  }, [stopPlayback])
+
+  const playNextInQueueRef = useRef(null)
+
+  const playNextInQueue = useCallback(() => {
+    if (playQueueRef.current.length === 0) {
+      isPlayingQueueRef.current = false
+      if (isDoneStreamingRef.current) {
+        if (currentChunkUrlRef.current) {
+          URL.revokeObjectURL(currentChunkUrlRef.current)
+          currentChunkUrlRef.current = null
+        }
+        if (pendingHistoryRef.current) {
+          historyRef.current = [...historyRef.current, pendingHistoryRef.current].slice(-3)
+          pendingHistoryRef.current = null
+        }
+        turnsRef.current += 1
+        analyserRef.current = null
+        if (shouldEndRef.current) {
+          turnsRef.current = 0
+          historyRef.current = []
+          setBoth('idle')
+          setTranscript('')
+        } else {
+          beginListeningRef.current({ postAnswer: true })
+        }
+      }
+      return
+    }
+
+    isPlayingQueueRef.current = true
+    const item = playQueueRef.current.shift()
+    if (currentChunkUrlRef.current) {
+      URL.revokeObjectURL(currentChunkUrlRef.current)
+    }
+    currentChunkUrlRef.current = item.url
+
+    setBoth('speaking')
+    if (item.text) setAnswer((a) => ({ text: item.text, id: a.id + 1 }))
+    if (captionsEnabledRef.current) {
+      setTranscript(item.text)
+    }
+
+    const el = audioElRef.current
+    if (!el) return
+    outCtxRef.current?.resume()
+    analyserRef.current = outAnalyserRef.current
+
+    el.onended = () => {
+      playNextInQueueRef.current?.()
+    }
+    el.onerror = () => {
+      playNextInQueueRef.current?.()
+    }
+    el.src = item.url
+    el.play().catch(() => {
+      playNextInQueueRef.current?.()
+    })
+  }, [captionsEnabledRef, setBoth])
+
+  playNextInQueueRef.current = playNextInQueue
+
+  const handleWsMessage = useCallback((msg) => {
+    const mtype = msg.type
+    if (mtype === 'state') {
+      if (msg.state === 'transcribing' || msg.state === 'thinking') {
+        setBoth('processing')
+      } else if (msg.state === 'idle' && !isPlayingQueueRef.current && playQueueRef.current.length === 0) {
+        setBoth('idle')
+      }
+    } else if (mtype === 'transcription') {
+      if (msg.empty) {
+        beginListeningRef.current({ postAnswer: turnsRef.current > 0 })
+        return
+      }
+      activeUserQueryRef.current = msg.text
+      if (captionsEnabledRef.current) {
+        setTranscript(msg.text)
+      }
+    } else if (mtype === 'audio_chunk') {
+      const blob = b64ToBlob(msg.audio, 'audio/wav')
+      const url = URL.createObjectURL(blob)
+      playQueueRef.current.push({
+        url,
+        text: msg.text,
+        index: msg.index,
+      })
+      if (!isPlayingQueueRef.current) {
+        playNextInQueueRef.current?.()
+      }
+    } else if (mtype === 'done') {
+      isDoneStreamingRef.current = true
+      shouldEndRef.current = !!msg.end
+      if (activeUserQueryRef.current && msg.full_text) {
+        pendingHistoryRef.current = { q: activeUserQueryRef.current, a: msg.full_text }
+      }
+      if (!isPlayingQueueRef.current && playQueueRef.current.length === 0) {
+        playNextInQueueRef.current?.()
+      }
+    } else if (mtype === 'interrupted') {
+      isPlayingQueueRef.current = false
+      isDoneStreamingRef.current = false
+      setBoth('idle')
+    } else if (mtype === 'error') {
+      console.warn('[voice-ws] Server error:', msg.message)
+      setBoth('idle')
+    }
+  }, [captionsEnabledRef, setBoth])
+
+  const getWsUrl = useCallback(() => {
+    let base = API_BASE
+    if (!base.startsWith('http')) {
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      base = `${proto}//${window.location.host}${base.startsWith('/') ? '' : '/'}${base}`
+    } else {
+      base = base.replace(/^http/, 'ws')
+    }
+    return `${base.replace(/\/$/, '')}/ws/voice`
+  }, [])
+
+  const connectWs = useCallback(() => {
+    if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+      return wsRef.current
+    }
+    try {
+      const url = getWsUrl()
+      const ws = new WebSocket(url)
+      wsRef.current = ws
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data)
+          handleWsMessage(msg)
+        } catch (e) {
+          console.warn('[voice-ws] Parse error:', e)
+        }
+      }
+      ws.onerror = (e) => {
+        console.warn('[voice-ws] Socket error, HTTP fallback available:', e)
+      }
+      ws.onclose = () => {
+        wsRef.current = null
+        setTimeout(() => {
+          if (whisperMode !== 'wasm' && piperMode !== 'wasm') {
+            connectWs()
+          }
+        }, 2000)
+      }
+      return ws
+    } catch (e) {
+      console.warn('[voice-ws] Connect error:', e)
+      return null
+    }
+  }, [getWsUrl, handleWsMessage, whisperMode, piperMode])
+
+  useEffect(() => {
+    if (whisperMode !== 'wasm' && piperMode !== 'wasm') {
+      connectWs()
+    }
+    return () => {
+      wsRef.current?.close()
+    }
+  }, [connectWs, whisperMode, piperMode])
+
   // ── mic teardown ────────────────────────────────────────────────────
   const stopMic = useCallback(() => {
     clearInterval(vadTimerRef.current)
@@ -302,6 +500,19 @@ export default function useVoiceAssistant() {
 
   const askApi = useCallback(async (question) => {
     setBoth('processing')
+    const ws = wsRef.current
+    if (piperMode !== 'wasm' && ws && ws.readyState === WebSocket.OPEN) {
+      activeUserQueryRef.current = question
+      isDoneStreamingRef.current = false
+      ws.send(JSON.stringify({
+        type: 'query',
+        text: question,
+        history: historyRef.current,
+        voice: selectedVoice,
+        session_id: sessionIdRef.current,
+      }))
+      return
+    }
     try {
       const res = await fetch(`${API_BASE}/ask`, {
         method:  'POST',
@@ -322,7 +533,7 @@ export default function useVoiceAssistant() {
     } catch {
       await speak("Sorry, I couldn't reach the server.")
     }
-  }, [speak])
+  }, [speak, piperMode, selectedVoice, setBoth])
 
   const finalize = useCallback(async () => {
     const recorder = recorderRef.current
@@ -350,6 +561,32 @@ export default function useVoiceAssistant() {
     stopMic()
     setBoth('processing')
 
+    // If server pipeline is active and WebSocket is open, send recorded audio over WebSocket
+    if (whisperMode !== 'wasm' && piperMode !== 'wasm') {
+      const ws = wsRef.current
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+          const reader = new FileReader()
+          reader.onloadend = () => {
+            const base64Audio = reader.result.split(',')[1]
+            isDoneStreamingRef.current = false
+            ws.send(JSON.stringify({
+              type: 'audio',
+              data: base64Audio,
+              format: formatRef.current.ext,
+              history: historyRef.current,
+              voice: selectedVoice,
+              session_id: sessionIdRef.current,
+            }))
+          }
+          reader.readAsDataURL(blob)
+          return
+        } catch (e) {
+          console.warn('[voice-ws] Failed to send audio via WS, falling back to HTTP:', e)
+        }
+      }
+    }
+
     try {
       let text
       if (whisperMode === 'wasm') {
@@ -371,7 +608,7 @@ export default function useVoiceAssistant() {
       console.warn('[voice] transcription error:', e)
       await speak("Sorry, I couldn't reach the server.")
     }
-  }, [stopMic, askApi, speak, whisperMode])
+  }, [stopMic, askApi, speak, whisperMode, piperMode, selectedVoice, setBoth])
 
   const beginListening = useCallback(async (opts = {}) => {
     stopPlayback()
@@ -459,13 +696,14 @@ export default function useVoiceAssistant() {
   beginListeningRef.current = beginListening
 
   const cancel = useCallback(() => {
+    interrupt()
     stopMic()
     stopPlayback()
     turnsRef.current   = 0
     historyRef.current = []
     setBoth('idle')
     setTranscript('')
-  }, [stopMic, stopPlayback])
+  }, [interrupt, stopMic, stopPlayback, setBoth])
 
   const toggle = useCallback(() => {
     if (stateRef.current === 'idle') {
@@ -473,10 +711,15 @@ export default function useVoiceAssistant() {
       // Piper still loading: let the user start listening; TTS will play once ready
       ensurePlayback()
       beginListening()
+    } else if (stateRef.current === 'speaking') {
+      // Tap-to-interrupt: cut speech immediately and start listening
+      interrupt()
+      ensurePlayback()
+      beginListening()
     } else {
       cancel()
     }
-  }, [ensurePlayback, beginListening, cancel, whisperMode])
+  }, [ensurePlayback, beginListening, interrupt, cancel, whisperMode])
 
   return {
     state,

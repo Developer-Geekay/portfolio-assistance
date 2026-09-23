@@ -18,10 +18,13 @@ try:
 except AttributeError:
     ssl_context = None
 
+import asyncio
+import base64
+
 from dotenv import load_dotenv
 load_dotenv()   # backend/.env — loaded before engine reads its env vars
 
-from fastapi import FastAPI, HTTPException, Request, UploadFile, File
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
@@ -374,13 +377,9 @@ async def ask(q: Question, request: Request):
     return {"answer": answer, "end": False}
 
 
-@app.post("/transcribe")
-def transcribe(audio: UploadFile = File(...)):
-    """Speech-to-text: browser uploads recorded audio (webm/mp4/wav), Whisper
-    transcribes locally. Sync endpoint → FastAPI runs it in a threadpool."""
-    suffix = os.path.splitext(audio.filename or "")[1] or ".webm"
+def transcribe_audio_bytes(data: bytes, suffix: str = ".webm") -> str:
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(audio.file.read())
+        tmp.write(data)
         path = tmp.name
     try:
         segments, _ = stt_model.transcribe(path, language="en", beam_size=1,
@@ -388,7 +387,49 @@ def transcribe(audio: UploadFile = File(...)):
         text = " ".join(s.text.strip() for s in segments).strip()
     finally:
         os.unlink(path)
+    return text
+
+
+@app.post("/transcribe")
+def transcribe(audio: UploadFile = File(...)):
+    """Speech-to-text: browser uploads recorded audio (webm/mp4/wav), Whisper
+    transcribes locally. Sync endpoint → FastAPI runs it in a threadpool."""
+    suffix = os.path.splitext(audio.filename or "")[1] or ".webm"
+    data = audio.file.read()
+    text = transcribe_audio_bytes(data, suffix)
     return {"text": text}
+
+
+def synthesize_wav_bytes(text: str, voice_id: str | None = None) -> bytes:
+    vid = voice_id or get_setting("piper_voice", "en_US-amy-medium")
+    global loaded_voices
+    if vid not in loaded_voices:
+        onnx_path = f"models/tts/{vid}.onnx"
+        if os.path.exists(onnx_path):
+            try:
+                from piper import PiperVoice
+                loaded_voices[vid] = PiperVoice.load(onnx_path)
+            except Exception as e:
+                raise RuntimeError(f"Failed to load voice {vid}: {e}")
+        else:
+            if loaded_voices:
+                vid = next(iter(loaded_voices.keys()))
+            else:
+                raise RuntimeError(f"Voice model {vid} is not downloaded on server")
+
+    tts_voice = loaded_voices[vid]
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as f:
+        try:
+            from piper.config import SynthesisConfig
+            syn_config = SynthesisConfig(length_scale=1.18)
+        except Exception:
+            syn_config = None
+        tts_voice.synthesize_wav(text, f, syn_config=syn_config)
+        sample_rate = tts_voice.config.sample_rate
+        silence_frames = int(sample_rate * 0.25)
+        f.writeframes(b"\x00\x00" * silence_frames)
+    return buf.getvalue()
 
 
 class SpeakRequest(BaseModel):
@@ -403,34 +444,235 @@ def speak(req: SpeakRequest):
     text = req.text.strip()[:1000]
     if not text:
         raise HTTPException(status_code=400, detail="No text")
-    
     voice_id = req.voice or get_setting("piper_voice", "en_US-amy-medium")
-    global loaded_voices
-    if voice_id not in loaded_voices:
-        onnx_path = f"models/tts/{voice_id}.onnx"
-        if os.path.exists(onnx_path):
+    try:
+        data = synthesize_wav_bytes(text, voice_id)
+        return Response(content=data, media_type="audio/wav")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.websocket("/ws/voice")
+async def voice_websocket(websocket: WebSocket):
+    """Full-duplex real-time streaming voice endpoint with sentence-level pipelined
+    TTS and live interruption (barge-in) support."""
+    await websocket.accept()
+    ip = client_ip_of(websocket)
+    ua = websocket.headers.get("user-agent", "")
+    device = parse_device(ua)
+
+    active_task = None
+    abort_event = threading.Event()
+
+    async def cancel_active():
+        nonlocal active_task
+        abort_event.set()
+        if active_task and not active_task.done():
+            active_task.cancel()
             try:
-                from piper import PiperVoice
-                loaded_voices[voice_id] = PiperVoice.load(onnx_path)
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to load voice {voice_id}: {e}")
-        else:
-            raise HTTPException(status_code=400, detail=f"Voice model {voice_id} is not downloaded on server")
-            
-    tts_voice = loaded_voices[voice_id]
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as f:
-        try:
-            from piper.config import SynthesisConfig
-            syn_config = SynthesisConfig(length_scale=1.18)
-        except Exception:
-            syn_config = None
-        tts_voice.synthesize_wav(text, f, syn_config=syn_config)
-        # Append silence frames for natural sentence pause
-        sample_rate = tts_voice.config.sample_rate
-        silence_frames = int(sample_rate * 0.45)
-        f.writeframes(b"\x00\x00" * silence_frames)
-    return Response(content=buf.getvalue(), media_type="audio/wav")
+                await active_task
+            except (asyncio.CancelledError, Exception):
+                pass
+        active_task = None
+
+    try:
+        while True:
+            raw_msg = await websocket.receive_text()
+            try:
+                msg = json.loads(raw_msg)
+            except Exception:
+                continue
+
+            mtype = msg.get("type")
+
+            if mtype == "ping":
+                await websocket.send_text(json.dumps({"type": "pong"}))
+                continue
+
+            if mtype == "interrupt":
+                await cancel_active()
+                await websocket.send_text(json.dumps({"type": "interrupted"}))
+                await websocket.send_text(json.dumps({"type": "state", "state": "idle"}))
+                continue
+
+            if mtype in ("audio", "query"):
+                await cancel_active()
+                abort_event.clear()
+
+                session_id = msg.get("session_id", "")
+                history = msg.get("history", [])
+                voice_id = msg.get("voice") or msg.get("voice_id")
+
+                query_text = ""
+                if mtype == "audio":
+                    b64_data = msg.get("data") or msg.get("audio", "")
+                    if not b64_data:
+                        continue
+                    fmt = msg.get("format") or msg.get("ext", "webm")
+                    suffix = f".{fmt}" if not fmt.startswith(".") else fmt
+                    await websocket.send_text(json.dumps({"type": "state", "state": "transcribing"}))
+                    try:
+                        raw_bytes = base64.b64decode(b64_data)
+                        query_text = await asyncio.to_thread(transcribe_audio_bytes, raw_bytes, suffix)
+                    except Exception as e:
+                        print(f"[ws] Transcribe error: {e}")
+                        await websocket.send_text(json.dumps({"type": "error", "message": "Failed to transcribe audio"}))
+                        await websocket.send_text(json.dumps({"type": "state", "state": "idle"}))
+                        continue
+
+                    if not query_text:
+                        await websocket.send_text(json.dumps({"type": "transcription", "text": "", "empty": True}))
+                        await websocket.send_text(json.dumps({"type": "state", "state": "idle"}))
+                        continue
+
+                    await websocket.send_text(json.dumps({"type": "transcription", "text": query_text}))
+                else:
+                    query_text = (msg.get("text") or "").strip()
+
+                if not query_text:
+                    await websocket.send_text(json.dumps({"type": "state", "state": "idle"}))
+                    continue
+
+                async def process_query(q_text: str):
+                    try:
+                        contact = extract_contact(q_text)
+                        if contact:
+                            conn.execute(
+                                "INSERT INTO leads (session_id, client_ip, email, phone, message, timestamp) "
+                                "VALUES (?, ?, ?, ?, ?, ?)",
+                                (session_id, ip, contact["email"], contact["phone"],
+                                 contact["raw"], datetime.utcnow().isoformat())
+                            )
+                            conn.commit()
+                            log_conversation(session_id, ip, device, q_text, LEAD_RESPONSE, "lead")
+                            await send_single_response(LEAD_RESPONSE, voice_id)
+                            return
+
+                        intent = detect_intent(q_text)
+                        if intent == "greeting":
+                            log_conversation(session_id, ip, device, q_text, GREETING_RESPONSE, intent)
+                            await send_single_response(GREETING_RESPONSE, voice_id)
+                            return
+                        if intent == "thanks":
+                            log_conversation(session_id, ip, device, q_text, THANKS_RESPONSE, intent)
+                            await send_single_response(THANKS_RESPONSE, voice_id)
+                            return
+                        if intent == "farewell":
+                            log_conversation(session_id, ip, device, q_text, FAREWELL_RESPONSE, intent)
+                            await send_single_response(FAREWELL_RESPONSE, voice_id, end=True)
+                            return
+                        if intent == "self_intro":
+                            log_conversation(session_id, ip, device, q_text, SELF_INTRO_RESPONSE, intent)
+                            await send_single_response(SELF_INTRO_RESPONSE, voice_id)
+                            return
+                        if intent == "personal":
+                            log_conversation(session_id, ip, device, q_text, PERSONAL_RESPONSE, intent)
+                            await send_single_response(PERSONAL_RESPONSE, voice_id)
+                            return
+
+                        # Out-of-scope follow-up check
+                        if history:
+                            last_ans = history[-1].get("a", "")
+                            if "outside of my knowledge base" in last_ans:
+                                polite_ack = (
+                                    "Thank you! I have saved what you want to know and your contact details (if provided). "
+                                    "Gokul will review it, update my knowledge base, and reach out to you once the answer is ready!"
+                                )
+                                log_conversation(session_id, ip, device, q_text, polite_ack, "lead")
+                                await send_single_response(polite_ack, voice_id)
+                                return
+
+                        # Stream sentences from Gemma LLM
+                        await websocket.send_text(json.dumps({"type": "state", "state": "thinking"}))
+                        q = asyncio.Queue()
+                        loop = asyncio.get_running_loop()
+
+                        def stream_worker():
+                            try:
+                                for sentence in engine.ask_stream(q_text, history):
+                                    if abort_event.is_set():
+                                        break
+                                    asyncio.run_coroutine_threadsafe(q.put(("sentence", sentence)), loop)
+                                asyncio.run_coroutine_threadsafe(q.put(("done", None)), loop)
+                            except Exception as ex:
+                                asyncio.run_coroutine_threadsafe(q.put(("error", ex)), loop)
+
+                        thread = threading.Thread(target=stream_worker, daemon=True)
+                        thread.start()
+
+                        chunk_idx = 0
+                        full_sentences = []
+
+                        while True:
+                            kind, val = await q.get()
+                            if abort_event.is_set():
+                                break
+                            if kind == "sentence":
+                                if chunk_idx == 0:
+                                    await websocket.send_text(json.dumps({"type": "state", "state": "speaking"}))
+                                full_sentences.append(val)
+                                wav_bytes = await asyncio.to_thread(synthesize_wav_bytes, val, voice_id)
+                                b64_wav = base64.b64encode(wav_bytes).decode("ascii")
+                                await websocket.send_text(json.dumps({
+                                    "type": "audio_chunk",
+                                    "index": chunk_idx,
+                                    "text": val,
+                                    "audio": b64_wav,
+                                }))
+                                chunk_idx += 1
+                            elif kind == "done":
+                                break
+                            elif kind == "error":
+                                print(f"[ws] Stream error: {val}")
+                                break
+
+                        full_answer = " ".join(full_sentences).strip()
+                        if full_answer:
+                            if "don't have" in full_answer.lower() or "not covered" in full_answer.lower():
+                                conn.execute(
+                                    "INSERT INTO queries (question, timestamp) VALUES (?, ?)",
+                                    (q_text, datetime.utcnow().isoformat())
+                                )
+                                conn.commit()
+                            log_conversation(session_id, ip, device, q_text, full_answer, "question")
+                            await websocket.send_text(json.dumps({
+                                "type": "done",
+                                "total_chunks": chunk_idx,
+                                "full_text": full_answer,
+                            }))
+                        await websocket.send_text(json.dumps({"type": "state", "state": "idle"}))
+                    except asyncio.CancelledError:
+                        pass
+                    except Exception as ex:
+                        print(f"[ws] Query processing error: {ex}")
+                        await websocket.send_text(json.dumps({"type": "error", "message": str(ex)}))
+                        await websocket.send_text(json.dumps({"type": "state", "state": "idle"}))
+
+                async def send_single_response(resp_text: str, v_id: str | None, end: bool = False):
+                    await websocket.send_text(json.dumps({"type": "state", "state": "speaking"}))
+                    wav_bytes = await asyncio.to_thread(synthesize_wav_bytes, resp_text, v_id)
+                    b64_wav = base64.b64encode(wav_bytes).decode("ascii")
+                    await websocket.send_text(json.dumps({
+                        "type": "audio_chunk",
+                        "index": 0,
+                        "text": resp_text,
+                        "audio": b64_wav,
+                    }))
+                    await websocket.send_text(json.dumps({
+                        "type": "done",
+                        "total_chunks": 1,
+                        "full_text": resp_text,
+                        "end": end,
+                    }))
+                    await websocket.send_text(json.dumps({"type": "state", "state": "idle"}))
+
+                active_task = asyncio.create_task(process_query(query_text))
+
+    except WebSocketDisconnect:
+        await cancel_active()
+    except Exception as e:
+        print(f"[ws] Connection closed: {e}")
+        await cancel_active()
 
 
 @app.get("/facts")
