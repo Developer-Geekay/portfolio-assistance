@@ -28,7 +28,7 @@ cp build/service.sh build/service.ps1 build/build.sh build/build.ps1 \
 
 if $WITH_MODELS; then
     echo "Including models (~3.5 GB)..."
-    cp -R models/generator models/tts models/embedder "$STAGE/models/" 2>/dev/null \
+    cp -R models/generator models/tts "$STAGE/models/" 2>/dev/null \
         || echo "WARNING: some model folders missing — run setup first for a full bundle."
 fi
 

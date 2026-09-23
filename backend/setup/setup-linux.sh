@@ -113,10 +113,6 @@ for f in en_US-amy-medium.onnx en_US-amy-medium.onnx.json; do
     [ -f "models/tts/$f" ] || curl -L --fail --progress-bar -o "models/tts/$f" "$TTS_BASE/$f"
 done
 
-if [ ! -f models/embedder/config.json ]; then
-    echo "Downloading embedder model..."
-    "$PY" download_model.py
-fi
 
 echo "Caching Whisper model..."
 "$PY" - <<'EOF'

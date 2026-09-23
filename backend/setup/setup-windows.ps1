@@ -140,10 +140,6 @@ foreach ($f in @("en_US-amy-medium.onnx", "en_US-amy-medium.onnx.json")) {
     }
 }
 
-if (-not (Test-Path "models\embedder\config.json")) {
-    Write-Host "Downloading embedder model..."
-    & $VenvPy download_model.py
-}
 
 Write-Host "Caching Whisper model..."
 & $VenvPy -c @"

@@ -6,5 +6,5 @@ python-dotenv
 llama-cpp-python
 faster-whisper
 piper-tts
-sentence-transformers
 numpy
+

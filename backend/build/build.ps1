@@ -25,7 +25,7 @@ foreach ($f in @("service.sh", "service.ps1", "build.sh", "build.ps1",
 
 if ($WithModels) {
     Write-Host "Including models (~3.5 GB)..."
-    foreach ($m in @("generator", "tts", "embedder")) {
+    foreach ($m in @("generator", "tts")) {
         $src = Join-Path $AppDir "models\$m"
         if (Test-Path $src) { Copy-Item $src -Destination "$Stage\models\$m" -Recurse }
         else { Write-Host "WARNING: models\$m missing - run setup first for a full bundle." }
