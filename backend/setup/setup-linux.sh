@@ -101,10 +101,10 @@ echo "Compute mode written to .env: $COMPUTE"
 # --- 7. Models ---------------------------------------------------------------
 mkdir -p models/generator models/tts index
 
-GEN_FILE="models/generator/gemma-4-e2b-it-qat-q4.gguf"
-GEN_URL="https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-UD-Q4_K_XL.gguf"
+GEN_FILE="models/generator/gemma-4-E4B_q4_0-it.gguf"
+GEN_URL="https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_0.gguf"
 if [ ! -f "$GEN_FILE" ]; then
-    echo "Downloading generator model (~3 GB, one time)..."
+    echo "Downloading generator model (~4.6 GB, one time)..."
     curl -L --fail --progress-bar -o "$GEN_FILE" "$GEN_URL"
 fi
 

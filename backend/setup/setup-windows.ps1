@@ -124,10 +124,10 @@ if (-not (Test-Path "knowledge_base.json")) {
 # --- 7. Models ---------------------------------------------------------------------
 New-Item -ItemType Directory -Force -Path "models\generator", "models\tts", "index" | Out-Null
 
-$GenFile = "models\generator\gemma-4-e2b-it-qat-q4.gguf"
-$GenUrl  = "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-UD-Q4_K_XL.gguf"
+$GenFile = "models\generator\gemma-4-E4B_q4_0-it.gguf"
+$GenUrl  = "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_0.gguf"
 if (-not (Test-Path $GenFile)) {
-    Write-Host "Downloading generator model (~3 GB, one time)..."
+    Write-Host "Downloading generator model (~4.6 GB, one time)..."
     curl.exe -L --fail -o $GenFile $GenUrl
     if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: generator model download failed."; exit 1 }
 }

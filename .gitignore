@@ -32,6 +32,7 @@ backend/models/tts/*
 # local references / scratch
 reference/*
 guide.md
+server_backup/
 
 # frontend
 node_modules/
