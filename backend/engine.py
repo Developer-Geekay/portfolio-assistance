@@ -255,14 +255,32 @@ def load_model():
         else:
             print(f"Warning: Neither '{model_file}' nor '{fallback}' found on disk.")
 
-    llm = Llama(
-        model_path=model_file,
-        n_ctx=N_CTX,
-        n_threads=N_THREADS,
-        n_gpu_layers=N_GPU_LAYERS,
-        verbose=False,
-        chat_format="gemma",
-    )
+    try:
+        llm = Llama(
+            model_path=model_file,
+            n_ctx=N_CTX,
+            n_threads=N_THREADS,
+            n_gpu_layers=N_GPU_LAYERS,
+            verbose=False,
+            chat_format="gemma",
+        )
+    except (OSError, Exception) as gpu_err:
+        if N_GPU_LAYERS != 0:
+            print(f"WARNING: GPU model loading failed ({gpu_err}). Falling back to CPU inference (n_gpu_layers=0)...")
+            try:
+                llm = Llama(
+                    model_path=model_file,
+                    n_ctx=N_CTX,
+                    n_threads=N_THREADS,
+                    n_gpu_layers=0,
+                    verbose=False,
+                    chat_format="gemma",
+                )
+            except (OSError, Exception) as cpu_err:
+                print(f"ERROR: Model loading failed on both GPU and CPU: {cpu_err}")
+                raise
+        else:
+            raise
     print(f"Model ready ({model_file}, context={N_CTX}).")
 
 
