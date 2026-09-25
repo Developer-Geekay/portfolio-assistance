@@ -1,6 +1,6 @@
 # First-time backend setup for Windows (PowerShell).
-# Checks Python, creates the venv, installs dependencies (CUDA GPU-aware with
-# CPU fallback), downloads the embedder / TTS / generator models, and prints
+# Checks Python, creates/detects the venv, installs dependencies (CUDA GPU-aware with
+# CPU fallback), downloads Kokoro TTS / generator models, and prints
 # how to run the server. Safe to re-run.
 #
 # Run from PowerShell:
@@ -31,28 +31,36 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Python: $(& $Python --version)"
 
 # --- 2. Virtual env -------------------------------------------------------------
-if (-not (Test-Path ".venv")) {
+$VenvDir = $null
+if (Test-Path "assistantenv\Scripts\python.exe") {
+    $VenvDir = "assistantenv"
+    Write-Host "Using existing virtual environment: assistantenv"
+} elseif (Test-Path ".venv\Scripts\python.exe") {
+    $VenvDir = ".venv"
+    Write-Host "Using existing virtual environment: .venv"
+} else {
+    $VenvDir = ".venv"
     & $Python -m venv .venv
     Write-Host "Created .venv"
 }
-$VenvPy = Join-Path $BackendDir ".venv\Scripts\python.exe"
+$VenvPy = Join-Path $BackendDir "$VenvDir\Scripts\python.exe"
 & $VenvPy -m pip install --quiet --upgrade pip
 
 # --- 3. GPU detection (NVIDIA), CPU fallback ------------------------------------
 $Compute = "cpu"
+$HasNvidiaGpu = $false
 if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
     nvidia-smi | Out-Null
     if ($LASTEXITCODE -eq 0) {
-        $Compute = "cuda"
+        $HasNvidiaGpu = $true
         $gpuName = (nvidia-smi --query-gpu=name --format=csv,noheader | Select-Object -First 1)
         Write-Host "GPU detected: $gpuName"
     }
 }
-if ($Compute -eq "cpu") { Write-Host "No NVIDIA GPU detected - using CPU." }
+if (-not $HasNvidiaGpu) {
+    Write-Host "No NVIDIA GPU detected - using CPU mode."
+}
 
-# llama-cpp-python: prebuilt wheel for the detected backend, CPU as fallback.
-# The CUDA index must be the ONLY index for this install — PyPI carries newer
-# source-only releases that would otherwise win and build a CPU-only binary.
 function Invoke-QuietPython([string[]]$PyArgs) {
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
@@ -61,32 +69,66 @@ function Invoke-QuietPython([string[]]$PyArgs) {
     $ErrorActionPreference = $prev
     return $ok
 }
-if ($Compute -eq "cuda") {
-    $hasCuda = Invoke-QuietPython @("-c", "import llama_cpp, sys; sys.exit(0 if llama_cpp.llama_supports_gpu_offload() else 1)")
-    if (-not $hasCuda) {
-        & $VenvPy -m pip install --force-reinstall --no-deps --only-binary=:all: llama-cpp-python `
-            --index-url https://abetlen.github.io/llama-cpp-python/whl/cu124
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "CUDA wheel unavailable - falling back to CPU build."
-            $Compute = "cpu"
+
+if ($HasNvidiaGpu) {
+    Write-Host "Installing NVIDIA CUDA runtime packages for Windows..."
+    & $VenvPy -m pip install nvidia-cuda-runtime-cu12 nvidia-cublas-cu12 nvidia-cudnn-cu12
+}
+
+# Check CUDA Toolkit / nvcc for compiling llama-cpp-python with CUDA
+$hasNvcc = $false
+if (Get-Command nvcc -ErrorAction SilentlyContinue) {
+    $hasNvcc = $true
+} else {
+    # Check default CUDA installation paths on Windows
+    $cudaDirs = Get-Item "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v*" -ErrorAction SilentlyContinue
+    if ($cudaDirs) {
+        $latestCuda = $cudaDirs | Sort-Object Name -Descending | Select-Object -First 1
+        $cudaBin = Join-Path $latestCuda.FullName "bin"
+        if (Test-Path (Join-Path $cudaBin "nvcc.exe")) {
+            $env:PATH = "$cudaBin;$env:PATH"
+            $env:CUDA_PATH = $latestCuda.FullName
+            $hasNvcc = $true
+            Write-Host "Found CUDA Toolkit at: $($latestCuda.FullName)"
         }
     }
 }
-if ($Compute -eq "cpu") {
+
+$hasLlamaGpu = Invoke-QuietPython @("-c", "import llama_cpp, sys; sys.exit(0 if llama_cpp.llama_supports_gpu_offload() else 1)")
+if ($hasLlamaGpu) {
+    Write-Host "llama-cpp-python already installed with GPU offload support."
+    $Compute = "cuda"
+} elseif ($HasNvidiaGpu -and $hasNvcc) {
+    Write-Host "Compiling llama-cpp-python with CUDA support (-DGGML_CUDA=on)..."
+    $env:CMAKE_ARGS = "-DGGML_CUDA=on"
+    & $VenvPy -m pip install --no-cache-dir --force-reinstall llama-cpp-python
+    $hasLlamaGpu = Invoke-QuietPython @("-c", "import llama_cpp, sys; sys.exit(0 if llama_cpp.llama_supports_gpu_offload() else 1)")
+    if ($hasLlamaGpu) {
+        $Compute = "cuda"
+        Write-Host "Successfully installed llama-cpp-python with CUDA support!"
+    } else {
+        Write-Host "WARNING: CUDA compilation did not enable GPU offload. Inference will run on CPU."
+    }
+} elseif ($HasNvidiaGpu -and -not $hasNvcc) {
+    Write-Host ""
+    Write-Host "NOTE: NVIDIA GPU detected. Whisper will run with CUDA acceleration."
+    Write-Host "To enable CUDA offload for LLM (Gemma), install NVIDIA CUDA Toolkit 12.x from:"
+    Write-Host "  https://developer.nvidia.com/cuda-downloads"
+    Write-Host "Inference will run on CPU until CUDA Toolkit is installed."
+    Write-Host ""
     $hasLlama = Invoke-QuietPython @("-c", "import llama_cpp")
     if (-not $hasLlama) {
-        & $VenvPy -m pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
-        if ($LASTEXITCODE -ne 0) { & $VenvPy -m pip install llama-cpp-python }
+        & $VenvPy -m pip install llama-cpp-python
+    }
+} else {
+    $hasLlama = Invoke-QuietPython @("-c", "import llama_cpp")
+    if (-not $hasLlama) {
+        & $VenvPy -m pip install llama-cpp-python
     }
 }
 
 # --- 4. Remaining dependencies ---------------------------------------------------
 & $VenvPy -m pip install -r requirements.txt
-if ($Compute -eq "cuda") {
-    # CUDA runtime libs for llama.cpp and faster-whisper (ctranslate2):
-    # cudart for llama.dll, cublas for both, cudnn for ctranslate2
-    & $VenvPy -m pip install nvidia-cuda-runtime-cu12 nvidia-cublas-cu12 nvidia-cudnn-cu12
-}
 
 # --- 5. .env ---------------------------------------------------------------------
 if (-not (Test-Path ".env")) {
@@ -94,8 +136,6 @@ if (-not (Test-Path ".env")) {
     Write-Host "Created .env from .env.example - edit persona/admin values."
 }
 function Set-EnvValue([string]$Key, [string]$Value) {
-    # Rewrite as a line array so appends never glue onto a final line
-    # that lacks a trailing newline
     $lines = @(Get-Content ".env")
     if ($lines -match "^$Key=") {
         $lines = $lines -replace "^$Key=.*", "$Key=$Value"
@@ -104,16 +144,17 @@ function Set-EnvValue([string]$Key, [string]$Value) {
     }
     Set-Content ".env" $lines
 }
-if ($Compute -eq "cuda") {
-    Set-EnvValue "LLM_GPU_LAYERS" "-1"
+
+if ($HasNvidiaGpu) {
     Set-EnvValue "WHISPER_DEVICE" "cuda"
     Set-EnvValue "WHISPER_COMPUTE" "float16"
+    Set-EnvValue "LLM_GPU_LAYERS" "-1"
 } else {
-    Set-EnvValue "LLM_GPU_LAYERS" "0"
     Set-EnvValue "WHISPER_DEVICE" "cpu"
     Set-EnvValue "WHISPER_COMPUTE" "int8"
+    Set-EnvValue "LLM_GPU_LAYERS" "0"
 }
-Write-Host "Compute mode written to .env: $Compute"
+Write-Host "Compute configuration written to .env (Whisper: $(if ($HasNvidiaGpu) { 'cuda' } else { 'cpu' }), LLM: $(if ($Compute -eq 'cuda') { 'cuda' } else { 'cpu' }))"
 
 # --- 6. Knowledge base -------------------------------------------------------------
 if (-not (Test-Path "knowledge_base.json")) {
@@ -132,14 +173,30 @@ if (-not (Test-Path $GenFile)) {
     if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: generator model download failed."; exit 1 }
 }
 
-$TtsBase = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium"
-foreach ($f in @("en_US-amy-medium.onnx", "en_US-amy-medium.onnx.json")) {
-    if (-not (Test-Path "models\tts\$f")) {
-        curl.exe -L --fail -o "models\tts\$f" "$TtsBase/$f"
-        if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: TTS voice download failed."; exit 1 }
-    }
+# Kokoro-82M ONNX TTS models (Primary)
+$KokoroModel = "models\tts\kokoro-v1.0.onnx"
+$KokoroVoices = "models\tts\voices-v1.0.bin"
+$KokoroBase = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0"
+
+if (-not (Test-Path $KokoroModel)) {
+    Write-Host "Downloading Kokoro-82M ONNX model (~340 MB)..."
+    curl.exe -L --fail -o $KokoroModel "$KokoroBase/kokoro-v1.0.onnx"
+}
+if (-not (Test-Path $KokoroVoices)) {
+    Write-Host "Downloading Kokoro voices file (~27 MB)..."
+    curl.exe -L --fail -o $KokoroVoices "$KokoroBase/voices-v1.0.bin"
 }
 
+# Piper fallback voice
+$PiperModel = "models\tts\en_US-lessac-medium.onnx"
+$PiperJson = "models\tts\en_US-lessac-medium.onnx.json"
+$PiperBase = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium"
+if (-not (Test-Path $PiperModel)) {
+    curl.exe -L --fail -o $PiperModel "$PiperBase/en_US-lessac-medium.onnx"
+}
+if (-not (Test-Path $PiperJson)) {
+    curl.exe -L --fail -o $PiperJson "$PiperBase/en_US-lessac-medium.onnx.json"
+}
 
 Write-Host "Caching Whisper model..."
 & $VenvPy -c @"
@@ -151,15 +208,20 @@ WhisperModel(os.environ.get('WHISPER_MODEL', 'base.en'), device='cpu', compute_t
 print('Whisper model cached.')
 "@
 
-& $VenvPy build_index.py
+if (Test-Path "build_qa_index.py") {
+    Write-Host "Building Q&A index..."
+    & $VenvPy build_qa_index.py
+} elseif (Test-Path "build_index.py") {
+    & $VenvPy build_index.py
+}
 
 # --- 8. Done -------------------------------------------------------------------------
 Write-Host ""
-Write-Host "== Setup complete ($Compute mode) =="
+Write-Host "== Setup complete =="
 Write-Host ""
 Write-Host "Run the server:"
 Write-Host "    cd $BackendDir"
-Write-Host "    .venv\Scripts\python.exe main.py     # serves on http://0.0.0.0:16000"
+Write-Host "    $VenvDir\Scripts\python.exe main.py     # serves on http://0.0.0.0:16000"
 Write-Host ""
 Write-Host "Or run it as a managed background service:"
 Write-Host "    powershell -ExecutionPolicy Bypass -File build\service.ps1 start|stop|restart|status"
