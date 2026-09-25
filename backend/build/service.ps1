@@ -14,12 +14,9 @@ $PidFile = Join-Path $PSScriptRoot "assistant.pid"
 $OutLog  = Join-Path $PSScriptRoot "assistant.log"
 $ErrLog  = Join-Path $PSScriptRoot "assistant.err.log"
 # venv lives in backend\ (setup scripts, bundles) or one level up (repo root)
-$Python = $null
-foreach ($vname in @(".venv", "assistantenv")) {
-    $cand = Join-Path $AppDir "$vname\Scripts\python.exe"
-    if (Test-Path $cand) { $Python = $cand; break }
-    $candParent = Join-Path (Split-Path -Parent $AppDir) "$vname\Scripts\python.exe"
-    if (Test-Path $candParent) { $Python = $candParent; break }
+$Python = Join-Path $AppDir ".venv\Scripts\python.exe"
+if (-not (Test-Path $Python)) {
+    $Python = Join-Path (Split-Path -Parent $AppDir) ".venv\Scripts\python.exe"
 }
 
 function Get-AssistantProcess {

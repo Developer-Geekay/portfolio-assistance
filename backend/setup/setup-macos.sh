@@ -94,16 +94,11 @@ if [ ! -f "$GEN_FILE" ]; then
     curl -L --fail --progress-bar -o "$GEN_FILE" "$GEN_URL"
 fi
 
-# Kokoro-82M ONNX TTS models (Primary)
-KOKORO_BASE="https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0"
-[ -f "models/tts/kokoro-v1.0.onnx" ] || curl -L --fail --progress-bar -o "models/tts/kokoro-v1.0.onnx" "$KOKORO_BASE/kokoro-v1.0.onnx"
-[ -f "models/tts/voices-v1.0.bin" ] || curl -L --fail --progress-bar -o "models/tts/voices-v1.0.bin" "$KOKORO_BASE/voices-v1.0.bin"
-
-# Piper fallback voice
-PIPER_BASE="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium"
-for f in en_US-lessac-medium.onnx en_US-lessac-medium.onnx.json; do
-    [ -f "models/tts/$f" ] || curl -L --fail --progress-bar -o "models/tts/$f" "$PIPER_BASE/$f"
+TTS_BASE="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium"
+for f in en_US-amy-medium.onnx en_US-amy-medium.onnx.json; do
+    [ -f "models/tts/$f" ] || curl -L --fail --progress-bar -o "models/tts/$f" "$TTS_BASE/$f"
 done
+
 
 echo "Caching Whisper model..."
 "$PY" - <<'EOF'
@@ -115,11 +110,7 @@ WhisperModel(os.environ.get("WHISPER_MODEL", "base.en"), device="cpu", compute_t
 print("Whisper model cached.")
 EOF
 
-if [ -f "build_qa_index.py" ]; then
-    "$PY" build_qa_index.py
-elif [ -f "build_index.py" ]; then
-    "$PY" build_index.py
-fi
+"$PY" build_index.py
 
 # --- 8. Done -----------------------------------------------------------------
 cat <<EOF
