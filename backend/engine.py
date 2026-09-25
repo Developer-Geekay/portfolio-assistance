@@ -8,9 +8,18 @@ from gpu_dlls import register_cuda_dlls
 register_cuda_dlls()   # before llama_cpp import — llama.dll resolves CUDA DLLs at load
 from llama_cpp import Llama
 
-MODEL_PATH   = os.environ.get("LLM_MODEL", "models/generator/gemma-4-E4B_q4_0-it.gguf")
-KB_PATH      = os.environ.get("KB_PATH", "knowledge_base.json")
-QA_INDEX     = os.environ.get("QA_INDEX", "index/qa_flows.json")
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def _resolve_path(path: str) -> str:
+    if not os.path.isabs(path) and not os.path.exists(path):
+        candidate = os.path.join(_BASE_DIR, path)
+        if os.path.exists(candidate):
+            return candidate
+    return path
+
+MODEL_PATH   = _resolve_path(os.environ.get("LLM_MODEL", "models/generator/gemma-4-E4B_q4_0-it.gguf"))
+KB_PATH      = _resolve_path(os.environ.get("KB_PATH", "knowledge_base.json"))
+QA_INDEX     = _resolve_path(os.environ.get("QA_INDEX", "index/qa_flows.json"))
 N_THREADS    = int(os.environ.get("LLM_THREADS", "4"))
 N_CTX        = int(os.environ.get("LLM_CTX", "8192"))
 # 0 = CPU only, -1 = offload all layers to GPU (CUDA/Metal), N = partial offload.
@@ -83,12 +92,16 @@ _CAT_PATTERNS: list[tuple[str, list[re.Pattern]]] = [
 
 def _load_qa_index() -> None:
     global _qa_by_category
-    if not os.path.exists(QA_INDEX):
+    target_qa = _resolve_path(QA_INDEX)
+    if not os.path.exists(target_qa):
         return
-    with open(QA_INDEX) as f:
-        data = json.load(f)
-    _qa_by_category = data.get("by_category", {})
-    print(f"Q&A index loaded: {data.get('total', 0)} flows, {len(_qa_by_category)} categories")
+    try:
+        with open(target_qa, encoding="utf-8") as f:
+            data = json.load(f)
+        _qa_by_category = data.get("by_category", {})
+        print(f"Q&A index loaded: {data.get('total', 0)} flows, {len(_qa_by_category)} categories")
+    except Exception as e:
+        print(f"Warning: Could not load Q&A index from '{target_qa}': {e}")
 
 def _detect_category(question: str) -> str:
     for cat, patterns in _CAT_PATTERNS:
@@ -122,7 +135,13 @@ def _get_qa_examples(question: str, n: int = 1) -> str:
     return "RESPONSE EXAMPLES:\n" + "\n\n".join(lines) + "\n\n"
 
 def _build_system_prompt() -> str:
-    with open(KB_PATH) as f:
+    target_kb = _resolve_path(KB_PATH)
+    if not os.path.exists(target_kb):
+        sample = _resolve_path("knowledge_base.sample.json")
+        if os.path.exists(sample):
+            print(f"Notice: '{target_kb}' not found. Falling back to sample '{sample}'.")
+            target_kb = sample
+    with open(target_kb, encoding="utf-8") as f:
         kb = json.load(f)
 
     by_topic = {}

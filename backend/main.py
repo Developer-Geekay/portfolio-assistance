@@ -22,7 +22,10 @@ import asyncio
 import base64
 
 from dotenv import load_dotenv
-_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+_backend_dir = os.path.dirname(os.path.abspath(__file__))
+if os.path.abspath(os.getcwd()) != _backend_dir:
+    os.chdir(_backend_dir)
+_env_path = os.path.join(_backend_dir, ".env")
 if os.path.exists(_env_path):
     load_dotenv(dotenv_path=_env_path, override=True)
 load_dotenv(override=True)   # Fallback to CWD .env if any
