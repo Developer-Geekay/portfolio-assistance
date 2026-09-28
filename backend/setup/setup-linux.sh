@@ -25,7 +25,28 @@ fi
 echo "Python: $("$PYTHON" --version)"
 
 # --- 2. Virtual env ----------------------------------------------------------
-if [ ! -d .venv ]; then
+if [ -d .venv ]; then
+    # A venv left half-built by a failed install is worth wiping; a good one is
+    # worth keeping. Ask, and reuse it when there is nobody to answer (CI).
+    reply=k
+    if [ -t 0 ]; then
+        printf '.venv already exists. Delete and recreate it, or keep it and install over it? [r/K] '
+        read -r reply || reply=k
+    else
+        echo ".venv already exists — keeping it (non-interactive run)."
+    fi
+    case "$reply" in
+        r | R)
+            echo "Removing existing .venv..."
+            rm -rf .venv
+            "$PYTHON" -m venv .venv
+            echo "Recreated .venv"
+            ;;
+        *)
+            echo "Keeping existing .venv — packages are installed over it."
+            ;;
+    esac
+else
     "$PYTHON" -m venv .venv
     echo "Created .venv"
 fi
@@ -82,7 +103,22 @@ set_env() {
     fi
 }
 if [ "$COMPUTE" = cuda ]; then
-    set_env LLM_GPU_LAYERS -1
+    # The model needs roughly its own size plus ~1.2 GB of KV cache and compute
+    # buffers in VRAM. When that does not fit, the model still loads and then
+    # every request dies with "llama_decode returned -3", so check first.
+    VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1)
+    VRAM_GB=$(( ${VRAM_MB:-0} / 1024 ))
+    MODEL_NEED_GB=6           # ~4.6 GB generator + ~1.2 GB working buffers
+    if [ "$VRAM_GB" -ge "$MODEL_NEED_GB" ]; then
+        set_env LLM_GPU_LAYERS -1
+        echo "CUDA GPU offload enabled (${VRAM_GB} GB VRAM)."
+    else
+        set_env LLM_GPU_LAYERS 0
+        echo "WARNING: ${VRAM_GB} GB VRAM is short of the ~${MODEL_NEED_GB} GB this model needs."
+        echo "  Configured CPU inference instead, which is slow. Either switch LLM_MODEL in"
+        echo "  .env to a smaller model, or set LLM_GPU_LAYERS to a partial count (e.g. 20)"
+        echo "  together with LLM_USE_MMAP=0 to offload only what fits."
+    fi
     set_env WHISPER_DEVICE cuda
     set_env WHISPER_COMPUTE float16
 else
@@ -108,7 +144,9 @@ if [ ! -f "$GEN_FILE" ]; then
     curl -L --fail --progress-bar -o "$GEN_FILE" "$GEN_URL"
 fi
 
-TTS_BASE="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium"
+# amy is the default PIPER_VOICE in .env.example; the voice name has to match
+# the directory it lives in on the hub
+TTS_BASE="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/amy/medium"
 for f in en_US-amy-medium.onnx en_US-amy-medium.onnx.json; do
     [ -f "models/tts/$f" ] || curl -L --fail --progress-bar -o "models/tts/$f" "$TTS_BASE/$f"
 done
@@ -118,13 +156,17 @@ echo "Caching Whisper model..."
 "$PY" - <<'EOF'
 import os
 from dotenv import load_dotenv
-load_dotenv()
+# explicit path: find_dotenv() inspects the caller's stack frame and fails
+# when the script is piped in on stdin
+load_dotenv(".env")
 from faster_whisper import WhisperModel
 WhisperModel(os.environ.get("WHISPER_MODEL", "base.en"), device="cpu", compute_type="int8")
 print("Whisper model cached.")
 EOF
 
-"$PY" build_index.py
+# training_data/ is not in the repo, so a fresh clone has nothing to index yet
+"$PY" build_qa_index.py \
+    || echo "Q&A index skipped — add batches to training_data/, then run: .venv/bin/python build_qa_index.py"
 
 # --- 8. Done -----------------------------------------------------------------
 cat <<EOF

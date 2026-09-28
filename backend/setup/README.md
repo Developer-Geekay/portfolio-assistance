@@ -45,4 +45,4 @@ powershell -File build\service.ps1 start   # Windows
 
 Server listens on `http://0.0.0.0:16000` (change `PORT` in `.env`).
 Remember to replace the sample `knowledge_base.json` with your own facts
-and re-run `python build_index.py`.
+and re-run `python build_qa_index.py`.

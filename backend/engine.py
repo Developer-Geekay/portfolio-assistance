@@ -25,6 +25,10 @@ N_CTX        = int(os.environ.get("LLM_CTX", "8192"))
 # 0 = CPU only, -1 = offload all layers to GPU (CUDA/Metal), N = partial offload.
 # Safe on CPU-only installs: llama.cpp ignores it when no GPU backend is built in.
 N_GPU_LAYERS = int(os.environ.get("LLM_GPU_LAYERS", "0"))
+# With mmap on, llama.cpp maps the whole model into the GPU address space no matter
+# how few layers are offloaded — so a partial LLM_GPU_LAYERS does nothing to relieve
+# VRAM pressure. Turn mmap off to make partial offload actually bound GPU memory.
+USE_MMAP = os.environ.get("LLM_USE_MMAP", "1") not in ("0", "false", "False")
 
 # The person this assistant represents — set in .env for your own build
 FULL_NAME  = os.environ.get("PERSONA_FULL_NAME", "Gokula Kannan")
@@ -33,6 +37,21 @@ PERSONA_CONTACT = os.environ.get("PERSONA_CONTACT", "at developergeekay@gmail.co
 
 llm: Llama | None = None
 _system_prompt: str = ""
+_model_file: str = ""
+# set once the GPU has been ruled out, so a failure is diagnosed only once
+_gpu_disabled: bool = False
+
+_STOP_TOKENS = [
+    "<end_of_turn>",
+    "<start_of_turn>",
+    "\n<start_of_turn>",
+    "<eos>",
+    "\nQuestion:",
+    "\nUser:",
+    "\nQ:",
+    "\nHuman:",
+    "\n\n\n",
+]
 
 # ── Q&A retriever ─────────────────────────────────────────────────────────────
 
@@ -245,8 +264,20 @@ Do NOT describe him as "visionary", "world-class", "industry-leading", "the best
 """
 
 
+def _open_llama(n_gpu_layers: int) -> Llama:
+    return Llama(
+        model_path=_model_file,
+        n_ctx=N_CTX,
+        n_threads=N_THREADS,
+        n_gpu_layers=n_gpu_layers,
+        use_mmap=USE_MMAP,
+        verbose=False,
+        chat_format="gemma",
+    )
+
+
 def load_model():
-    global llm, _system_prompt
+    global llm, _system_prompt, _model_file, _gpu_disabled
     _system_prompt = _build_system_prompt()
     _load_qa_index()
     print("Loading model...")
@@ -263,44 +294,31 @@ def load_model():
         elif supported:
             print(f"LLM GPU offload active ({N_GPU_LAYERS} layers).")
 
-    model_file = MODEL_PATH
-    if not os.path.exists(model_file):
+    _model_file = MODEL_PATH
+    if not os.path.exists(_model_file):
         # Graceful fallback to 2B model if 4B model is not present locally
         fallback = "models/generator/gemma-4-e2b-it-qat-q4.gguf"
         if os.path.exists(fallback):
-            print(f"Notice: Configured model '{model_file}' not found locally. "
+            print(f"Notice: Configured model '{_model_file}' not found locally. "
                   f"Falling back to existing '{fallback}'.")
-            model_file = fallback
+            _model_file = fallback
         else:
-            print(f"Warning: Neither '{model_file}' nor '{fallback}' found on disk.")
+            print(f"Warning: Neither '{_model_file}' nor '{fallback}' found on disk.")
 
     try:
-        llm = Llama(
-            model_path=model_file,
-            n_ctx=N_CTX,
-            n_threads=N_THREADS,
-            n_gpu_layers=N_GPU_LAYERS,
-            verbose=False,
-            chat_format="gemma",
-        )
-    except (OSError, Exception) as gpu_err:
-        if N_GPU_LAYERS != 0:
-            print(f"WARNING: GPU model loading failed ({gpu_err}). Falling back to CPU inference (n_gpu_layers=0)...")
-            try:
-                llm = Llama(
-                    model_path=model_file,
-                    n_ctx=N_CTX,
-                    n_threads=N_THREADS,
-                    n_gpu_layers=0,
-                    verbose=False,
-                    chat_format="gemma",
-                )
-            except (OSError, Exception) as cpu_err:
-                print(f"ERROR: Model loading failed on both GPU and CPU: {cpu_err}")
-                raise
-        else:
+        llm = _open_llama(N_GPU_LAYERS)
+        _gpu_disabled = N_GPU_LAYERS == 0
+    except Exception as gpu_err:
+        if N_GPU_LAYERS == 0:
             raise
-    print(f"Model ready ({model_file}, context={N_CTX}).")
+        print(f"WARNING: GPU model loading failed ({gpu_err}). Falling back to CPU inference (n_gpu_layers=0)...")
+        try:
+            llm = _open_llama(0)
+            _gpu_disabled = True
+        except Exception as cpu_err:
+            print(f"ERROR: Model loading failed on both GPU and CPU: {cpu_err}")
+            raise
+    print(f"Model ready ({_model_file}, context={N_CTX}).")
 
 
 def reload_kb():
@@ -309,116 +327,121 @@ def reload_kb():
     _load_qa_index()
 
 
-def ask(question: str, history: list | None = None) -> str:
+def _build_messages(question: str, history: list | None) -> list[dict]:
+    """Chat turns for one question. The system prompt is glued to the oldest
+    retained turn so it stays the literal token prefix of every request, which
+    is what lets llama.cpp reuse its KV cache between turns."""
     recent = (history or [])[-3:]
-    messages = []
+    if not recent:
+        return [{"role": "user", "content": _system_prompt + "\n\nQuestion: " + question}]
 
-    if recent:
-        messages.append({"role": "user",      "content": _system_prompt + "\n\nQuestion: " + recent[0]["q"]})
-        messages.append({"role": "assistant", "content": recent[0]["a"]})
-        for turn in recent[1:]:
-            messages.append({"role": "user",      "content": "Question: " + turn["q"]})
-            messages.append({"role": "assistant", "content": turn["a"]})
-        messages.append({"role": "user", "content": "Question: " + question})
-    else:
-        messages.append({"role": "user", "content": _system_prompt + "\n\nQuestion: " + question})
-
-    stop_tokens = [
-        "<end_of_turn>",
-        "<start_of_turn>",
-        "\n<start_of_turn>",
-        "<eos>",
-        "\nQuestion:",
-        "\nUser:",
-        "\nQ:",
-        "\nHuman:",
-        "\n\n\n",
+    messages = [
+        {"role": "user",      "content": _system_prompt + "\n\nQuestion: " + recent[0]["q"]},
+        {"role": "assistant", "content": recent[0]["a"]},
     ]
+    for turn in recent[1:]:
+        messages.append({"role": "user",      "content": "Question: " + turn["q"]})
+        messages.append({"role": "assistant", "content": turn["a"]})
+    messages.append({"role": "user", "content": "Question: " + question})
+    return messages
 
+
+def _is_decode_failure(err: Exception) -> bool:
+    """A llama_decode error means the backend could not run the graph at all —
+    on Metal/CUDA that is almost always the GPU running out of memory."""
+    return isinstance(err, RuntimeError) and "llama_decode" in str(err)
+
+
+def _retry_on_cpu(err: Exception) -> bool:
+    """Reload the model with GPU offload disabled after a GPU decode failure.
+    Returns True when the caller should retry; False when CPU is already in use."""
+    global llm, _gpu_disabled
+    if _gpu_disabled:
+        return False
+    _gpu_disabled = True
+    print(f"WARNING: GPU inference failed ({err}). This usually means the GPU "
+          f"cannot fit the model plus its KV cache. Reloading on CPU...")
     try:
-        response = llm.create_chat_completion(
-            messages=messages,
-            max_tokens=160,
-            temperature=0.18,
-            repeat_penalty=1.18,
-            stop=stop_tokens,
-        )
-        return _clean_response(response["choices"][0]["message"]["content"].strip())
+        llm = _open_llama(0)
+    except Exception as cpu_err:
+        print(f"ERROR: CPU reload failed: {cpu_err}")
+        return False
+    print("Model reloaded on CPU. Set LLM_GPU_LAYERS=0 in .env to skip this "
+          "fallback, or use a smaller model to keep GPU offload.")
+    return True
+
+
+def _complete(messages: list[dict], max_tokens: int, stream: bool):
+    return llm.create_chat_completion(
+        messages=messages,
+        max_tokens=max_tokens,
+        temperature=0.18,
+        repeat_penalty=1.18,
+        stop=_STOP_TOKENS,
+        stream=stream,
+    )
+
+
+def _single_turn(question: str) -> list[dict]:
+    return [{"role": "user", "content": _system_prompt + "\n\nQuestion: " + question}]
+
+
+def ask(question: str, history: list | None = None) -> str:
+    messages = _build_messages(question, history)
+    try:
+        response = _complete(messages, max_tokens=160, stream=False)
     except ValueError as e:
         # If requested tokens exceed context window on long multi-turn sessions,
         # drop history and ask with system prompt directly to guarantee a response.
         if "exceed context" in str(e).lower() and len(messages) > 1:
             print("[engine] Context limit reached, retrying with direct single-turn prompt...")
-            fallback_msgs = [{"role": "user", "content": _system_prompt + "\n\nQuestion: " + question}]
-            response = llm.create_chat_completion(
-                messages=fallback_msgs,
-                max_tokens=130,
-                temperature=0.18,
-                repeat_penalty=1.18,
-                stop=stop_tokens,
-            )
-            return _clean_response(response["choices"][0]["message"]["content"].strip())
-        raise
+            response = _complete(_single_turn(question), max_tokens=130, stream=False)
+        else:
+            raise
+    except Exception as e:
+        if not (_is_decode_failure(e) and _retry_on_cpu(e)):
+            raise
+        response = _complete(messages, max_tokens=160, stream=False)
+    return _clean_response(response["choices"][0]["message"]["content"].strip())
 
 
 _ABBREVIATIONS = {"e.g.", "i.e.", "etc.", "mr.", "ms.", "dr.", "vs.", "approx."}
 _SENTENCE_SPLIT_REGEX = re.compile(r"([.!?]+(?:\s+|\Z)|\n+)")
 
 
+def _iter_completion(question: str, messages: list[dict]):
+    """Yield streaming chunks, recovering once from a context overflow or a GPU
+    decode failure.
+
+    create_chat_completion(stream=True) hands back a generator that does not
+    touch the model until it is advanced, so both failures surface here on the
+    first iteration rather than at the call site. Recovery is only safe before
+    anything has been emitted — a mid-stream failure re-raises, since restarting
+    would repeat text the caller has already spoken."""
+    emitted = False
+    try:
+        for chunk in _complete(messages, max_tokens=160, stream=True):
+            emitted = True
+            yield chunk
+        return
+    except ValueError as e:
+        if emitted or "exceed context" not in str(e).lower() or len(messages) <= 1:
+            raise
+        print("[engine] Context limit reached in stream, retrying with direct single-turn prompt...")
+        retry_messages, retry_tokens = _single_turn(question), 130
+    except Exception as e:
+        if emitted or not (_is_decode_failure(e) and _retry_on_cpu(e)):
+            raise
+        retry_messages, retry_tokens = messages, 160
+
+    yield from _complete(retry_messages, max_tokens=retry_tokens, stream=True)
+
+
 def ask_stream(question: str, history: list | None = None):
     """Generator yielding complete, cleaned sentences in real time as Gemma
     generates tokens. Enables pipelined TTS synthesis for sub-800ms TTFA."""
-    recent = (history or [])[-3:]
-    messages = []
-
-    if recent:
-        messages.append({"role": "user",      "content": _system_prompt + "\n\nQuestion: " + recent[0]["q"]})
-        messages.append({"role": "assistant", "content": recent[0]["a"]})
-        for turn in recent[1:]:
-            messages.append({"role": "user",      "content": "Question: " + turn["q"]})
-            messages.append({"role": "assistant", "content": turn["a"]})
-        messages.append({"role": "user", "content": "Question: " + question})
-    else:
-        messages.append({"role": "user", "content": _system_prompt + "\n\nQuestion: " + question})
-
-    stop_tokens = [
-        "<end_of_turn>",
-        "<start_of_turn>",
-        "\n<start_of_turn>",
-        "<eos>",
-        "\nQuestion:",
-        "\nUser:",
-        "\nQ:",
-        "\nHuman:",
-        "\n\n\n",
-    ]
-
-    try:
-        stream = llm.create_chat_completion(
-            messages=messages,
-            max_tokens=160,
-            temperature=0.18,
-            repeat_penalty=1.18,
-            stop=stop_tokens,
-            stream=True,
-        )
-    except ValueError as e:
-        if "exceed context" in str(e).lower() and len(messages) > 1:
-            print("[engine] Context limit reached in stream, retrying with direct single-turn prompt...")
-            fallback_msgs = [{"role": "user", "content": _system_prompt + "\n\nQuestion: " + question}]
-            stream = llm.create_chat_completion(
-                messages=fallback_msgs,
-                max_tokens=130,
-                temperature=0.18,
-                repeat_penalty=1.18,
-                stop=stop_tokens,
-                stream=True,
-            )
-        else:
-            raise
-
     buffer = ""
-    for chunk in stream:
+    for chunk in _iter_completion(question, _build_messages(question, history)):
         delta = chunk["choices"][0].get("delta", {})
         token = delta.get("content", "")
         if not token:

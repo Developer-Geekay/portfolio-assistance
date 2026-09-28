@@ -31,7 +31,24 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Python: $(& $Python --version)"
 
 # --- 2. Virtual env -------------------------------------------------------------
-if (-not (Test-Path ".venv")) {
+if (Test-Path ".venv") {
+    # A venv left half-built by a failed install is worth wiping; a good one is
+    # worth keeping. Ask, and reuse it when there is nobody to answer (CI).
+    $reply = "k"
+    if ([Environment]::UserInteractive) {
+        $reply = Read-Host ".venv already exists. Delete and recreate it, or keep it and install over it? [r/K]"
+    } else {
+        Write-Host ".venv already exists - keeping it (non-interactive run)."
+    }
+    if ($reply -match '^[rR]') {
+        Write-Host "Removing existing .venv..."
+        Remove-Item -Recurse -Force ".venv"
+        & $Python -m venv .venv
+        Write-Host "Recreated .venv"
+    } else {
+        Write-Host "Keeping existing .venv - packages are installed over it."
+    }
+} else {
     & $Python -m venv .venv
     Write-Host "Created .venv"
 }
@@ -105,7 +122,26 @@ function Set-EnvValue([string]$Key, [string]$Value) {
     Set-Content ".env" $lines
 }
 if ($Compute -eq "cuda") {
-    Set-EnvValue "LLM_GPU_LAYERS" "-1"
+    # The model needs roughly its own size plus ~1.2 GB of KV cache and compute
+    # buffers in VRAM. When that does not fit, the model still loads and then
+    # every request dies with "llama_decode returned -3", so check first.
+    $VramMb = 0
+    try {
+        $VramMb = [int](nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits |
+                        Select-Object -First 1)
+    } catch { $VramMb = 0 }
+    $VramGb = [math]::Floor($VramMb / 1024)
+    $ModelNeedGb = 6          # ~4.6 GB generator + ~1.2 GB working buffers
+    if ($VramGb -ge $ModelNeedGb) {
+        Set-EnvValue "LLM_GPU_LAYERS" "-1"
+        Write-Host "CUDA GPU offload enabled ($VramGb GB VRAM)."
+    } else {
+        Set-EnvValue "LLM_GPU_LAYERS" "0"
+        Write-Host "WARNING: $VramGb GB VRAM is short of the ~$ModelNeedGb GB this model needs."
+        Write-Host "  Configured CPU inference instead, which is slow. Either switch LLM_MODEL in"
+        Write-Host "  .env to a smaller model, or set LLM_GPU_LAYERS to a partial count (e.g. 20)"
+        Write-Host "  together with LLM_USE_MMAP=0 to offload only what fits."
+    }
     Set-EnvValue "WHISPER_DEVICE" "cuda"
     Set-EnvValue "WHISPER_COMPUTE" "float16"
 } else {
@@ -132,7 +168,9 @@ if (-not (Test-Path $GenFile)) {
     if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: generator model download failed."; exit 1 }
 }
 
-$TtsBase = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium"
+# amy is the default PIPER_VOICE in .env.example; the voice name has to match
+# the directory it lives in on the hub
+$TtsBase = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/amy/medium"
 foreach ($f in @("en_US-amy-medium.onnx", "en_US-amy-medium.onnx.json")) {
     if (-not (Test-Path "models\tts\$f")) {
         curl.exe -L --fail -o "models\tts\$f" "$TtsBase/$f"
@@ -145,13 +183,19 @@ Write-Host "Caching Whisper model..."
 & $VenvPy -c @"
 import os
 from dotenv import load_dotenv
-load_dotenv()
+# explicit path: find_dotenv() inspects the caller's stack frame and fails
+# when the script is passed with -c
+load_dotenv('.env')
 from faster_whisper import WhisperModel
 WhisperModel(os.environ.get('WHISPER_MODEL', 'base.en'), device='cpu', compute_type='int8')
 print('Whisper model cached.')
 "@
 
-& $VenvPy build_index.py
+# training_data\ is not in the repo, so a fresh clone has nothing to index yet
+& $VenvPy build_qa_index.py
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Q&A index skipped - add batches to training_data\, then run: .venv\Scripts\python.exe build_qa_index.py"
+}
 
 # --- 8. Done -------------------------------------------------------------------------
 Write-Host ""
